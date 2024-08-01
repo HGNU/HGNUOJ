@@ -1,0 +1,27 @@
+{% import "components/user.html" as user %}
+{% extends "manage_base.html" %}
+{% block manage_content %}
+<div class="section">
+  <div class="section__header">
+    <h1 class="section__title" data-heading>学生导入</h1>
+  </div>
+  <div class="section__body">
+    <p>输入学生信息，格式例如：123@abc.com,abc,123456,张三,计科2001,2020310000000，信息用英文逗号隔开，每个学生占一行</p>
+  </div>
+</div>
+<div class="section">
+  <div class="section__body">
+    {{ noscript_note.render() }}
+    <p name="messages"></p>
+    {{ form.form_textarea({
+        columns:null,
+        name:'students',
+        nospellcheck: true
+        }) }}
+    <div class="row"><div class="column">
+      <button name="preview" class="rounded primary button">{{ _('Preview') }}</button>
+      <button name="submit" class="rounded button">{{ _('Submit') }}</button>
+    </div></div>
+  </div>
+</div>
+{% endblock %}

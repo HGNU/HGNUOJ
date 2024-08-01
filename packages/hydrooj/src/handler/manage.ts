@@ -11,6 +11,7 @@ import { PRIV, STATUS } from '../model/builtin';
 import domain from '../model/domain';
 import record from '../model/record';
 import * as setting from '../model/setting';
+import StudentModel from '../model/stuinfo';
 import * as system from '../model/system';
 import user from '../model/user';
 import { check } from '../service/check';
@@ -278,6 +279,60 @@ class SystemUserImportHandler extends SystemHandler {
         this.response.body.messages = messages;
     }
 }
+
+class SystemStudentImportHandler extends SystemHandler {
+    async get() {
+        this.response.body.users = [];
+        this.response.template = 'manage_student_import.html';
+    }
+
+    @param('students', Types.Content)
+    @param('draft', Types.Boolean)
+    async post(domainId: string, students: string, draft: boolean) {
+        const users = students.split('\n');
+        const udocs = [];
+        const messages = [];
+        for (const i in users) {
+            const u = users[i];
+            if (!u.trim()) continue;
+            let [email, username, password, realname, classname, stuid] = u.split(',').map((t) => t.trim());
+            if (!email || !username || !password) [email, username, password, realname, classname, stuid] = u.split('\t').map((t) => t.trim());
+            if (email && username && password) {
+                if (!Types.Email[1](email)) messages.push(`Line ${+i + 1}: Invalid email.`);
+                else if (!Types.Username[1](username)) messages.push(`Line ${+i + 1}: Invalid username`);
+                else if (!Types.Password[1](password)) messages.push(`Line ${+i + 1}: Invalid password`);
+                else if (!/^[\u4E00-\u9FA5]{2,4}$/.test(realname)) messages.push(`Line ${+i + 1}: Invalid realname`);
+                else if (await user.getByEmail('system', email)) {
+                    messages.push(`Line ${+i + 1}: Email ${email} already exists.`);
+                } else if (await StudentModel.getStuInfoByStuId(stuid)) {
+                    messages.push(`Line ${+i + 1}: stuid ${stuid} already been registered.`);
+                } else if (await user.getByUname('system', username)) {
+                    messages.push(`Line ${+i + 1}: Username ${username} already exists.`);
+                } else {
+                    udocs.push({
+                        email, username, password, realname, classname, stuid,
+                    });
+                }
+            } else messages.push(`Line ${+i + 1}: Input invalid.`);
+        }
+        messages.push(`${udocs.length} students found.`);
+        logger.info(messages);
+        if (!draft) {
+            await Promise.all(udocs.map(async ({
+                email, username, password, realname, classname, stuid,
+            }) => {
+                try {
+                    const uid = await user.create(email, username, password);
+                    await StudentModel.create(uid, classname, realname, stuid);
+                } catch (e) {
+                    messages.push(e.message);
+                }
+            }));
+        }
+        this.response.body.users = udocs;
+        this.response.body.messages = messages;
+    }
+}
 /* eslint-enable no-await-in-loop */
 
 const Priv = omit(PRIV, ['PRIV_DEFAULT', 'PRIV_NEVER', 'PRIV_NONE', 'PRIV_ALL']);
@@ -325,6 +380,7 @@ export async function apply(ctx) {
     ctx.Route('manage_setting', '/manage/setting', SystemSettingHandler);
     ctx.Route('manage_config', '/manage/config', SystemConfigHandler);
     ctx.Route('manage_user_import', '/manage/userimport', SystemUserImportHandler);
+    ctx.Route('manage_student_import', '/manage/studentimport', SystemStudentImportHandler);
     ctx.Route('manage_user_priv', '/manage/userpriv', SystemUserPrivHandler);
     ctx.Connection('manage_check', '/manage/check-conn', SystemCheckConnHandler);
 }

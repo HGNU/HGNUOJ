@@ -11,6 +11,7 @@ export interface RemoteAccount {
     query?: string;
     frozen?: string;
     problemLists?: string[];
+    page: number;
     enableOn?: string[];
 }
 declare module 'hydrooj' {

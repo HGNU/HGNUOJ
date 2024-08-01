@@ -1,0 +1,17 @@
+{% import "components/nothing.html" as nothing with context %}
+{% import "components/user.html" as user with context %}
+{% import "components/paginator.html" as paginator with context %}
+{% if not ddocs.length %}
+  {{ nothing.render('no discussion yet...') }}
+{% else %}
+  {%- set ddoc = ddocs[0] -%}
+  <div class="section__body typo no-media col--problem-name">
+  <p>
+    <a href="{{ url('discussion_detail', did=ddoc._id, anchor=ddoc.updateAt.getTime()) }}" data-emoji-enabled>{{ ddoc['title'] }}</a>
+    <span style="float: right">{{ user.render_inline(udict[ddoc.owner], avatar=false, badge=false, classname=false) }}@{{ datetimeSpan(ddoc.updateAt)|safe }} {{ ddoc.views }}次查看</span>
+  </p>
+  </div>
+  {% if page != undefined and dpcount != undefined %}
+  {{ paginator.render(page, dpcount) }}
+  {% endif %}
+{% endif %}

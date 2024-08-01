@@ -23,6 +23,15 @@
                 {% if udoc.displayName %}<small>({{ udoc['displayName'] }})</small>{% endif %}
               </h1>
               <p>
+                {{ _('Stu_RealName') }}: {{ udoc['name'] }},
+                {{ _('Stu_ClassName') }}: {{ udoc['class'] }},
+                {{ _('Stu_ID') }}: {{ udoc['stuid'] }},
+                {% if udoc.badge %}
+                {% set _badge = udoc.badge.split('#') %}
+                  {{ _('tag') }}: {{ _badge[0] }}
+                {% endif %}
+              </p>
+              <p>
                 {{ _('UID') }}: {{ udoc['_id'] }},
                 {{ _('Registered at') }} {{ datetimeSpan(udoc['regat'])|safe }},
                 {{ _('last login at') }} {{ datetimeSpan(udoc['loginat'])|safe }},
@@ -42,9 +51,6 @@
                   <span class="icon icon-edit"></span>
                 </a>
               {% endif %}
-                <a class="profile-header__contact-item" href="{{ url('home_messages', query={target:udoc._id}) }}" target="_blank" data-tooltip="{{ _('Send Message') }}">
-                  <span class="icon icon-comment--multiple"></span>
-                </a>
               {% if udoc['mail'] %}
                 <a class="profile-header__contact-item" href="javascript:;" data-copy="{{ udoc['mail'] | base64_encode }}" data-tooltip="{{ _('Copy Email') }}">
                   <span class="icon icon-mail"></span>
@@ -91,18 +97,6 @@
       <div class="profile-content">
         <div class="section__tab-container immersive">
           <ul class="section__tabs">
-            <li class="section__tab-item">
-              <h1 class="section__tab-title">{{ _('Bio') }}</h1>
-              <div class="section__tab-main">
-              {% if not udoc.bio %}
-                {{ nothing.render("This person is lazy and didn't write anything.") }}
-              {% else %}
-                <div class="section__body typo">
-                  {{ udoc.bio|default('')|markdown|safe }}
-                </div>
-              {% endif %}
-              </div>
-            </li>
             {% if pdocs.length %}
               <li class="section__tab-item">
                 <h1 class="section__tab-title">{{ _('Accepted Problems') }}</h1>

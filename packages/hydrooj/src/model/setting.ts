@@ -46,9 +46,12 @@ export const SYSTEM_SETTINGS_BY_KEY: SettingDict = {};
 // eslint-disable-next-line max-len
 export type SettingType = 'text' | 'yaml' | 'number' | 'float' | 'markdown' | 'password' | 'boolean' | 'textarea' | [string, string][] | Record<string, string> | 'json';
 
+type Validator = (value: any) => boolean;
+
 export const Setting = (
     family: string, key: string, value: any = null,
     type: SettingType = 'text', name = '', desc = '', flag = 0,
+    validator?: Validator,
 ): _Setting => {
     let subType = '';
     if (type === 'yaml' && typeof value !== 'string') {
@@ -66,6 +69,7 @@ export const Setting = (
         subType,
         type: typeof type === 'object' ? 'select' : type,
         range: typeof type === 'object' ? type : null,
+        validator,
     };
 };
 
@@ -186,17 +190,20 @@ PreferenceSetting(
 );
 
 AccountSetting(
+    Setting('setting_student', 'stuid', '', 'text', 'Stu_ID',
+        '', FLAG_DISABLED, (s) => /^2\d{7}$|2\d{12}$/.test(s)),
+    Setting('setting_student', 'name', '', 'text', 'Stu_RealName',
+        '', FLAG_DISABLED, (s) => /^[\u4E00-\u9FA5]{2,4}$/.test(s)),
+    Setting('setting_student', 'class', null, 'text', 'Stu_ClassName',
+        '', undefined, (s) => /^[\u4E00-\u9FA5]{2,4}[1-2][0-9]{3}$/.test(s)),
     Setting('setting_info', 'avatar', '', 'text', 'Avatar',
         'Allow using gravatar:email qq:id github:name url:link format.'),
     Setting('setting_info', 'qq', null, 'text', 'QQ'),
     Setting('setting_info', 'gender', builtin.USER_GENDER_OTHER, builtin.USER_GENDER_RANGE, 'Gender'),
-    Setting('setting_info', 'bio', null, 'markdown', 'Bio'),
-    Setting('setting_info', 'school', '', 'text', 'School'),
-    Setting('setting_info', 'studentId', '', 'text', 'Student ID'),
     Setting('setting_info', 'phone', null, 'text', 'Phone', null, FLAG_DISABLED),
     Setting('setting_customize', 'backgroundImage',
         '/components/profile/backgrounds/1.jpg', 'text', 'Profile Background Image',
-        'Choose the background image in your profile page.'),
+        'Choose the background image in your profile page.', FLAG_DISABLED),
     Setting('setting_storage', 'unreadMsg', 0, 'number', 'Unread Message Count', null, FLAG_DISABLED | FLAG_HIDDEN),
     Setting('setting_storage', 'badge', '', 'text', 'badge info', null, FLAG_DISABLED | FLAG_HIDDEN),
     Setting('setting_storage', 'banReason', '', 'text', 'ban reason', null, FLAG_DISABLED | FLAG_HIDDEN),

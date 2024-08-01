@@ -362,6 +362,22 @@ class DomainSearchHandler extends Handler {
     }
 }
 
+class CourseHandler extends Handler {
+    async get() {
+        const domains: any[] = await domain.getMulti({ _id: { $ne: 'system' }, publicToCourses: { $eq: true } }).toArray();
+        const uDocs: any = {};
+        for await (const d of domains) {
+            uDocs[d.owner] = await user.getById('system', d.owner);
+            d['users'] = (await domain.getMultiUserInDomain(d._id).toArray()).length;
+        }
+        this.response.template = 'courses_main.html';
+        this.response.body = {
+            domains,
+            uDocs,
+        };
+    }
+}
+
 export async function apply(ctx: Context) {
     ctx.Route('ranking', '/ranking', DomainRankHandler, PERM.PERM_VIEW_RANKING);
     ctx.Route('domain_dashboard', '/domain/dashboard', DomainDashboardHandler);
@@ -373,4 +389,5 @@ export async function apply(ctx: Context) {
     ctx.Route('domain_join_applications', '/domain/join_applications', DomainJoinApplicationsHandler);
     ctx.Route('domain_join', '/domain/join', DomainJoinHandler, PRIV.PRIV_USER_PROFILE);
     ctx.Route('domain_search', '/domain/search', DomainSearchHandler, PRIV.PRIV_USER_PROFILE);
+    ctx.Route('courses', '/courses', CourseHandler);
 }

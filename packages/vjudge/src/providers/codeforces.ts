@@ -235,7 +235,7 @@ export default class CodeforcesProvider extends BasicFetcher implements IBasicPr
     }
 
     // TL;DR; add `gym` to this list to enable codeforces gym
-    entryProblemLists = ['main'];
+    entryProblemLists = ['main', 'gym'];
     async listProblem(page: number, resync = false, listName: string) {
         if (resync && page > 1) return [];
         if (resync && listName.startsWith('GYM')) return [];

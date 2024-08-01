@@ -22,14 +22,14 @@
           <div class="row"><div class="columns">
             <label>
               {{ _('Introduce') }}
-              <textarea name="content" class="textbox">{{ tdoc['content']|default('') }}</textarea>
+              <textarea name="content" class="textbox">{{ tdoc['content']|default('[^_^]:此处为非markdown的必填项，请删除该注释写上其他内容') }}</textarea>
               <p class="help-text">{{ _('Introduce must not exceed 500 characters and it will be shown in the list view.') }}</p>
             </label>
           </div></div>
           <div class="row"><div class="columns">
             <label>
               {{ _('Description') }}
-              <textarea name="description" class="textbox" data-markdown style="height: 200px">{{ tdoc['description']|default('') }}</textarea>
+              <textarea name="description" class="textbox" data-markdown style="height: 200px">{{ tdoc['description']|default('[^_^]:若需要写内容请删除该注释，若不需要写内容无需删除该注释，会自动不显示') }}</textarea>
             </label>
           </div></div>
           <div class="row"><div class="columns">

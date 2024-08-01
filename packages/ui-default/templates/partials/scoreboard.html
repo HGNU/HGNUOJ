@@ -31,7 +31,7 @@
           <th class="col--{{ column.type }}">
           {%- if column.type == 'problem' and column.raw -%}
             <a href="{{ url('problem_detail', pid=column.raw, query={tid:tdoc.docId}) }}" data-tooltip="{{ pdict[column.raw].title }}">
-              {{ column.value }}<br />{{ pdict[column.raw].nAccept|default(0) }}/{{ pdict[column.raw].nSubmit|default(0) }}
+              {{ column.value }}<br />{{ pdict[column.raw].nAccept|default(0) }}<br />/<br />{{ pdict[column.raw].nSubmit|default(0) }}
             </a>
           {%- else -%}
             {{ column.value|string|nl2br|safe }}
@@ -54,7 +54,7 @@
                 <span class="starred--hide"><span class="icon icon-star--outline" data-tooltip="{{ _('Star') }}"></span></span>
                 <span class="starred--show"><span class="icon icon-star" data-tooltip="{{ _('Unstar') }}"></span></span>
               </button>
-              {{ user.render_inline(udict[column.raw], badge=false) }}
+              {{ user.render_inline(udict[column.raw], avatar=false, badge=true, modbadge=false, levelbadge=false, classname=false) }}
             {%- elif column.type == 'record' and column.raw -%}
               <a href="{{ url('record_detail', rid=column.raw) if canView else '' }}" data-tooltip="{{ column.hover }}">
                 <span style="font-weight:bold;color:{{ utils.status.getScoreColor(column.score|default(column.value)) }}">{{ column.value|string|nl2br|safe }}</span>

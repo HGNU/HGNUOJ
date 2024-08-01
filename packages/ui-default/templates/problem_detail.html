@@ -48,7 +48,7 @@
           #{{ String.fromCharCode(65+tdoc.pids.indexOf(pdoc.docId)) if tdoc else pdoc.pid|default(pdoc.docId) }}. {{ pdoc.title }}
         </h1>
         {% if tdoc %}
-          <div class="section__tools contest-problems">
+          <div class="section__tools contest-problems" style="position: absolute; z-index: 1;">
             {% for pid in tdoc.pids -%}
               {% set status = tsdoc.detail[pid].status %}
               {% set pass = status == STATUS.STATUS_ACCEPTED %}

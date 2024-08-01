@@ -23,8 +23,8 @@
             <span class="user-profile-link">
               <img class="small user-profile-avatar v-center" loading="lazy" src="{{ avatarUrl(udoc.avatar|default('')) }}" width="20" height="20">
               <span class="user-profile-name">
-                {% if handler.user.hasPerm(perm.PREM_VIEW_DISPLAYNAME) and udoc.displayName and udoc.displayName != udoc.uname %}
-                  {{ udoc.displayName }} ({{ udoc.uname }})
+                {% if udoc.name %}
+                  {{ udoc.name }}
                 {% else %}
                   {{ udoc.uname }}
                 {% endif %}

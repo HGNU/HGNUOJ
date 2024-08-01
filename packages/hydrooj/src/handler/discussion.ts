@@ -186,12 +186,10 @@ class DiscussionDetailHandler extends DiscussionHandler {
                 reactions[drdoc._id.toHexString()] = reaction;
             })));
         const udict = await user.getList(domainId, uids);
-        if (!dsdoc?.view && this.user.hasPriv(PRIV.PRIV_USER_PROFILE)) {
-            await Promise.all([
-                discussion.inc(domainId, did, 'views', 1),
-                discussion.setStatus(domainId, did, this.user._id, { view: true }),
-            ]);
-        }
+        await Promise.all([
+            discussion.inc(domainId, did, 'views', 1),
+            discussion.setStatus(domainId, did, this.user._id, { view: true }),
+        ]);
         const path = [
             ['Hydro', 'homepage'],
             ['discussion_main', 'discussion_main'],

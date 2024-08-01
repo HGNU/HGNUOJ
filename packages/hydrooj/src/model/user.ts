@@ -3,7 +3,7 @@ import { LRUCache } from 'lru-cache';
 import { Collection, Filter, ObjectId } from 'mongodb';
 import { LoginError, UserAlreadyExistError, UserNotFoundError } from '../error';
 import {
-    Authenticator, BaseUserDict, FileInfo, GDoc,
+    Authenticator, FileInfo, GDoc,
     ownerInfo, Udict, Udoc, VUdoc,
 } from '../interface';
 import avatar from '../lib/avatar';
@@ -16,6 +16,7 @@ import { ArgMethod, buildProjection } from '../utils';
 import { PERM, PRIV } from './builtin';
 import domain from './domain';
 import * as setting from './setting';
+import StudentModel from './stuinfo';
 import * as system from './system';
 import token from './token';
 
@@ -23,6 +24,7 @@ export const coll: Collection<Udoc> = db.collection('user');
 // Virtual user, only for display in contest.
 export const collV: Collection<VUdoc> = db.collection('vuser');
 export const collGroup: Collection<GDoc> = db.collection('user.group');
+const collStu = db.collection('stu.info');
 const cache = new LRUCache<string, User>({ max: 10000, ttl: 300 * 1000 });
 
 export function deleteUserCache(udoc: { _id: number, uname: string, mail: string } | string | true | undefined | null, receiver = false) {
@@ -74,8 +76,12 @@ export class User {
     authn: boolean;
     group?: string[];
     [key: string]: any;
+    _studoc: any;
+    name: string;
+    class: string;
+    stuid: string;
 
-    constructor(udoc: Udoc, dudoc, scope = PERM.PERM_ALL) {
+    constructor(udoc: Udoc, dudoc, studoc, scope = PERM.PERM_ALL) {
         this._id = udoc._id;
 
         this._udoc = udoc;
@@ -100,6 +106,12 @@ export class User {
         this.domains = udoc.domains || [];
         this.tfa = !!udoc.tfa;
         this.authn = (udoc.authenticators || []).length > 0;
+        this._studoc = studoc;
+        if (studoc) {
+            this.name = studoc.name || '';
+            this.stuid = studoc.stuid || '';
+            this.class = studoc.class || '';
+        }
         if (dudoc.group) this.group = dudoc.group;
 
         for (const key in setting.SETTINGS_BY_KEY) {
@@ -155,7 +167,7 @@ export class User {
     }
 
     async private() {
-        const user = await new User(this._udoc, this._dudoc, this.scope).init();
+        const user = await new User(this._udoc, this._dudoc, this._studoc, this.scope).init();
         user.avatarUrl = avatar(user.avatar, 128);
         if (user.pinnedDomains instanceof Array) {
             const result = await Promise.allSettled(user.pinnedDomains.slice(0, 10).map((i) => domain.get(i)));
@@ -185,8 +197,8 @@ function handleMailLower(mail: string) {
     return data;
 }
 
-async function initAndCache(udoc: Udoc, dudoc, scope: bigint = PERM.PERM_ALL) {
-    const res = await new User(udoc, dudoc, scope).init();
+async function initAndCache(udoc: Udoc, dudoc, studoc, scope: bigint = PERM.PERM_ALL) {
+    const res = await new User(udoc, dudoc, studoc, scope).init();
     cache.set(`id/${udoc._id}/${dudoc.domainId}`, res);
     cache.set(`name/${udoc.unameLower}/${dudoc.domainId}`, res);
     cache.set(`mail/${udoc.mailLower}/${dudoc.domainId}`, res);
@@ -220,19 +232,24 @@ class UserModel {
         if (cache.has(`id/${_id}/${domainId}`)) return cache.get(`id/${_id}/${domainId}`) || null;
         const udoc = await (_id < -999 ? collV : coll).findOne({ _id });
         if (!udoc) return null;
+        // HGNUOJ
+        const studoc = await StudentModel.getStuInfoById(_id);
+        for (const key in studoc) {
+            udoc[key] = studoc[key];
+        }
         const [dudoc, groups] = await Promise.all([
             domain.getDomainUser(domainId, udoc),
             UserModel.listGroup(domainId, _id),
         ]);
         dudoc.group = groups.map((i) => i.name);
         if (typeof scope === 'string') scope = BigInt(scope);
-        return initAndCache(udoc, dudoc, scope);
+        return initAndCache(udoc, dudoc, studoc, scope);
     }
 
     static async getList(domainId: string, uids: number[]): Promise<Udict> {
         const r: Udict = {};
         await Promise.all(uniq(uids).map(async (uid) => {
-            r[uid] = (await UserModel.getById(domainId, uid)) || new User(UserModel.defaultUser, {});
+            r[uid] = (await UserModel.getById(domainId, uid)) || new User(UserModel.defaultUser, {}, {});
         }));
         return r;
     }
@@ -244,7 +261,8 @@ class UserModel {
         const udoc = (await coll.findOne({ unameLower })) || await collV.findOne({ unameLower });
         if (!udoc) return null;
         const dudoc = await domain.getDomainUser(domainId, udoc);
-        return initAndCache(udoc, dudoc);
+        const studoc = await StudentModel.getStuInfoById(udoc._id);
+        return initAndCache(udoc, dudoc, studoc);
     }
 
     @ArgMethod
@@ -254,7 +272,8 @@ class UserModel {
         const udoc = await coll.findOne({ mailLower });
         if (!udoc) return null;
         const dudoc = await domain.getDomainUser(domainId, udoc);
-        return initAndCache(udoc, dudoc);
+        const studoc = await StudentModel.getStuInfoById(udoc._id);
+        return initAndCache(udoc, dudoc, studoc);
     }
 
     @ArgMethod
@@ -265,6 +284,21 @@ class UserModel {
         if ($unset && Object.keys($unset).length) op.$unset = $unset;
         if ($push && Object.keys($push).length) op.$push = $push;
         if (op.$set?.loginip) op.$addToSet = { ip: op.$set.loginip };
+        // HGNUOJ
+        const stuinfo = ['stuid', 'name', 'class'];
+        const studoc = {};
+        stuinfo.forEach((element) => {
+            if (op.$set[element]) {
+                studoc[element] = op.$set[element];
+                delete op.$set[element];
+            }
+        });
+        if (!(await StudentModel.getStuInfoById(uid))) await StudentModel.create(uid);
+        if (studoc['stuid']) {
+            const stu = await StudentModel.getStuInfoByStuId(studoc['stuid']);
+            if (stu && stu._id !== uid) throw new UserAlreadyExistError(studoc['stuid']);
+        }
+        StudentModel.setById(uid, studoc);
         const keys = new Set(Object.values(op).flatMap((i) => Object.keys(i)));
         if (keys.has('mailLower') || keys.has('unameLower')) {
             const udoc = await coll.findOne({ _id: uid });
@@ -375,11 +409,20 @@ class UserModel {
     }
 
     static async getListForRender(domainId: string, uids: number[]) {
-        const [udocs, vudocs, dudocs] = await Promise.all([
+        const [udocs, vudocs, dudocs, studocs] = await Promise.all([
             UserModel.getMulti({ _id: { $in: uids } }, ['_id', 'uname', 'mail', 'avatar', 'school', 'studentId']).toArray(),
             collV.find({ _id: { $in: uids } }).toArray(),
             domain.getDomainUserMulti(domainId, uids).project({ uid: true, displayName: true }).toArray(),
+            collStu.find({ _id: { $in: uids } }).toArray(),
         ]);
+        const studict = {};
+        for (const studoc of studocs) studict[studoc._id] = studoc;
+        for (const udoc of udocs) {
+            const studoc = studict[udoc._id];
+            for (const key in studoc) {
+                udoc[key] = studoc[key];
+            }
+        }
         const udict = {};
         for (const udoc of udocs) udict[udoc._id] = udoc;
         for (const udoc of vudocs) udict[udoc._id] = udoc;
@@ -391,7 +434,7 @@ class UserModel {
             udict[key].displayName ||= udict[key].uname;
             udict[key].avatar ||= `gravatar:${udict[key].mail}`;
         }
-        return udict as BaseUserDict;
+        return udict;
     }
 
     @ArgMethod

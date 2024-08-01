@@ -10,14 +10,13 @@
             <col class="col--rank">
             <col class="col--user">
             <col class="col--rp">
-            <col class="col--bio">
           </colgroup>
           <thead>
             <tr>
               <th class="col--rank">{{ _('Rank') }}</th>
               <th class="col--user">{{ _('Username') }}</th>
               <th class="col--rp">{{ _('RP') }}</th>
-              <th class="col--bio">{{ _('Bio') }}</th>
+              <th class="col--rp">{{ _('Accept') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -27,7 +26,7 @@
                 <td class="col--rank">{{ loop.index }}</td>
                 <td class="col--user">{{ user.render_inline(udoc, levelbadge=false) }}</td>
                 <td class="col--rp">{{ udoc.rp|default(0)|round(0) }}</td>
-                <td class="col--bio">{{ udoc.bio|default('')|truncate(64, true)|markdownInline|safe }}</td>
+                <td class="col--rp">{{ udoc.nAccept }}</td>
               </tr>
             {%- endfor -%}
           </tbody>

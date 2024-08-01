@@ -20,7 +20,7 @@
           </li>
           <li><h2>{{ ddoc.title }}</h2></li>
           <li>
-            {{ user.render_inline(udict[ddoc.owner]) }}
+            {{ user.render_inline(udict[ddoc.owner], classname=false) }}
             @
             {{ datetimeSpan(ddoc._id)|safe }}
           </li>
@@ -35,9 +35,9 @@
           <span class="icon icon-edit"></span> {{ _('Edit') }}
         </a></li>
       {% endif %}
-      {% if ddoc.edited %}
+      {# {% if ddoc.edited %}
         <li data-discussion-history data-raw-url="{{ url('discussion_raw', did=ddoc.docId) }}">{{ _('Edited') }}</li>
-      {% endif %}
+      {% endif %} #}
         <li>{{ _('{0} views').format(ddoc.views) }}</li>
       {% if handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}
         <li><form class="form--inline" method="post">
@@ -73,7 +73,7 @@
       </div>
       </ul>
     </div>
-    <div class="section">
+    <!-- div class="section">
       <div class="section__header">
         <h1 class="section__title">{{ _('{0} comments').format(drcount) }}</h1>
       </div>
@@ -106,7 +106,7 @@
         {{ nothing.render('No comments so far...') }}
       {% endif %}
       </div>
-    </div>
+    </!-->
   </div>
   <div class="medium-3 columns">
     {% set udoc = udict[ddoc.owner] %}
@@ -118,7 +118,7 @@
             <img src="{{ avatarUrl(udoc.avatar, 80) }}" width="80" height="80" class="medium user-profile-avatar">
           </div>
           <div class="media__body">
-            <p>{{ user.render_inline(udoc, avatar=false, modbadge=false) }}</p>
+            <p>{{ user.render_inline(udoc, avatar=false, modbadge=false, classname=false) }}</p>
           </div>
         </div>
       </div>

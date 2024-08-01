@@ -20,9 +20,11 @@ import * as oplog from '../model/oplog';
 import problem, { ProblemDoc } from '../model/problem';
 import ScheduleModel from '../model/schedule';
 import SolutionModel from '../model/solution';
+import student from '../model/stuinfo';
 import * as system from '../model/system';
 import token from '../model/token';
 import user, { deleteUserCache } from '../model/user';
+import * as bus from '../service/bus';
 import {
     Handler, param, post, Types,
 } from '../service/server';
@@ -304,15 +306,29 @@ class UserRegisterWithCodeHandler extends Handler {
     @param('verifyPassword', Types.Password)
     @param('uname', Types.Username)
     @param('code', Types.String)
+    // 学生信息
+    @param('stuname', Types.String, (s) => /^[\u4E00-\u9FA5]{2,4}$/.test(s))
+    @param('stuid', Types.String, (s) => /^2\d{7}$|2\d{12}$/.test(s))
+    @param('stuclass', Types.String, (s) => /^[\u4E00-\u9FA5]{2,4}[1-2][0-9]{3}$/.test(s))
     async post(
-        domainId: string, password: string, verify: string,
-        uname: string, code: string,
+        domainId: string,
+        password: string,
+        verify: string,
+        uname: string,
+        code: string,
+        // 学生信息
+        stuname: string,
+        stuid: string,
+        stuclass: string,
     ) {
         const tdoc = await token.get(code, token.TYPE_REGISTRATION);
         if (!tdoc || (!tdoc.mail && !tdoc.phone)) throw new InvalidTokenError(token.TYPE_TEXTS[token.TYPE_REGISTRATION], code);
         if (password !== verify) throw new VerifyPasswordError();
+        if (await student.getStuInfoByStuId(stuid)) throw new UserAlreadyExistError(stuid);
         if (tdoc.phone) tdoc.mail = `${String.random(12)}@hydro.local`;
         const uid = await user.create(tdoc.mail, uname, password, undefined, this.request.ip);
+        // 插入学生信息
+        await student.create(uid, stuclass, stuname, stuid);
         await token.del(code, token.TYPE_REGISTRATION);
         const [id, mailDomain] = tdoc.mail.split('@');
         const $set: any = tdoc.set || {};
@@ -420,12 +436,13 @@ class UserDetailHandler extends Handler {
             }
         }
         const tags = Object.entries(acInfo).sort((a, b) => b[1] - a[1]).slice(0, 20);
+        const studoc = await student.getStuInfoById(uid);
         const tsdocs = await ContestModel.getMultiStatus(domainId, { uid, attend: { $exists: true } }).project({ docId: 1 }).toArray();
         const tdocs = await ContestModel.getMulti(domainId, { docId: { $in: tsdocs.map((i) => i.docId) } })
             .project({ docId: 1, title: 1, rule: 1 }).sort({ _id: -1 }).toArray();
         this.response.template = 'user_detail.html';
         this.response.body = {
-            isSelfProfile, udoc, sdoc, pdocs, tags, tdocs,
+            isSelfProfile, udoc, sdoc, pdocs, tags, tdocs, studoc,
         };
         if (this.user.hasPerm(PERM.PERM_VIEW_PROBLEM_SOLUTION)) {
             const psdocs = await SolutionModel.getByUser(domainId, uid).limit(10).toArray();
@@ -521,6 +538,71 @@ class OauthCallbackHandler extends Handler {
     }
 }
 
+// HGNUOJ 学生信息
+class StudentInfoHandler extends Handler {
+    // @param('uid', Types.Int)
+    // async get(domainId: string, uid: number) {
+    //     const res = await student.getStuInfoById(uid);
+    //     this.response.body = res;
+    // }
+
+    @param('uid', Types.Int)
+    @post('cls', Types.String, true)
+    @post('name', Types.String, true)
+    @post('stuid', Types.String, true)
+    async post(domainId: string, uid: number, cls?: string, name?: string, stuid?: string) {
+        const studoc = {
+            class: cls, name, stuid,
+        };
+        const $set = {};
+        for (const key in studoc) {
+            if (studoc[key] !== undefined) $set[key] = studoc[key];
+        }
+        const res = await student.setById(uid, $set);
+        return res;
+    }
+}
+
+// HGNUOJ 班级信息
+class StudentClassHandler extends Handler {
+    @param('cls', Types.String)
+    async get(domainId: string, cls: string) {
+        const udocs = await student.getUserListByClassName(domainId, cls);
+        udocs.sort((a, b) => parseInt(a.stuid, 10) - parseInt(b.stuid, 10));
+        const sdocsTemp = await Promise.all(udocs.map(async ({ _id }) => {
+            const { updateAt } = await token.getMostRecentSessionByUid(_id, ['createAt', 'updateAt']) || { updateAt: null };
+            return { _id, updateAt };
+        }));
+        const sdocs = {};
+        for (const sdoc of sdocsTemp) sdocs[sdoc['_id']] = sdoc['updateAt'];
+        this.response.template = 'stu_class_students.html';
+        this.response.body = {
+            className: cls,
+            udocs,
+            sdocs,
+        };
+        this.UiContext.extraTitleContent = cls;
+    }
+}
+class ClassHandler extends Handler {
+    async get(domainId: string) {
+        const cls: { clsList: any[] } = await student.getClassList();
+        const starStudents: any[] = await Promise.all(
+            cls.clsList.slice(0, 2).map(async ({ _id }) => ({ _id, students: await student.getUserListByClassNameOrdered(domainId, _id, 3) })),
+        );
+        this.response.template = 'stu_class_list.html';
+        this.response.body = {
+            ...cls, starStudents,
+        };
+    }
+
+    async postInvalidateCache() {
+        await bus.broadcast('student/invalidateClassListCache');
+        await bus.broadcast('student/invalidateActivityCache');
+        this.back();
+    }
+}
+
 class ContestModeHandler extends Handler {
     async get() {
         const bindings = await user.getMulti({ loginip: { $exists: true } })
@@ -552,6 +634,9 @@ export async function apply(ctx) {
     ctx.Route('user_lostpass_with_code', '/lostpass/:code', UserLostPassWithCodeHandler);
     ctx.Route('user_delete', '/user/delete', UserDeleteHandler, PRIV.PRIV_USER_PROFILE);
     ctx.Route('user_detail', '/user/:uid(-?\\d+)', UserDetailHandler);
+    ctx.Route('student_detail', '/student/:uid', StudentInfoHandler, PRIV.PRIV_USER_PROFILE);
+    ctx.Route('student_class', '/class/:cls', StudentClassHandler, PRIV.PRIV_USER_PROFILE);
+    ctx.Route('class', '/class', ClassHandler, PRIV.PRIV_USER_PROFILE);
     if (system.get('server.contestmode')) {
         ctx.Route('contest_mode', '/contestmode', ContestModeHandler, PRIV.PRIV_EDIT_SYSTEM);
     }

@@ -56,9 +56,9 @@
                 columns:2,
                 label:'Extension (days)',
                 name:'extensionDays',
-                value:extensionDays
+                value:extensionDays|default(0)
             }) }}
-          </div>
+            </div>
           <div class="row">
             {{ form.form_text({
                 row:false,
@@ -94,7 +94,7 @@
               columns:null,
               label:'Content',
               name:'content',
-              value:tdoc['content']|default(''),
+              value:tdoc['content']|default('[^_^]:若需要写内容请删除该注释，若不需要写内容无需删除该注释，会自动不显示'),
               markdown:true
           }) }}
           <div class="row"><div class="columns">

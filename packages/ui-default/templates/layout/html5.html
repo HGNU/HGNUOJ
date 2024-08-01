@@ -56,6 +56,11 @@
       }
     </script>
   {% endif %}
+  <script>
+    const a = document.createElement('style');
+    a.innerHTML = `.section{border-radius:10px}`;
+    document.head.append(a);
+  </script>
 </head>
 <body>
   {% if not isIE(handler.request.headers['user-agent']) and not handler.session.legacy %}

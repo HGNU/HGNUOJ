@@ -10,8 +10,8 @@
       <div class="media">
         <div class="media__left">
           <div class="discussion__replies numbox">
-            <div class="numbox__num large">{{ ddoc.nReply }}</div>
-            <div class="numbox__text">{{ _('Comments') }}</div>
+            <div class="numbox__num large">{{ ddoc.views }}</div>
+            <div class="numbox__text">{{ _('查看') }}</div>
           </div>
         </div>
         <div class="media__body top">
@@ -29,9 +29,9 @@
                 {{ vndict[ddoc.parentType][ddoc.parentId].title|default(_('(missing)')) }}
               </a>
             </li>
-            <li>{{ _('{0} views').format(ddoc.views) }}</li>
+            <!-- <li>{{ _('{0} views').format(ddoc.views) }}</li> -->
             <li>
-              {{ user.render_inline(udict[ddoc.owner], badge=false) }}
+              {{ user.render_inline(udict[ddoc.owner], badge=true, classname=false) }}
               @
               {{ datetimeSpan(ddoc.updateAt)|safe }}
             </li>

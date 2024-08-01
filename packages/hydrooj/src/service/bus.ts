@@ -6,9 +6,9 @@ import pm2 from '@hydrooj/utils/lib/locate-pm2';
 import type { ProblemSolutionHandler } from '../handler/problem';
 import type { UserRegisterHandler } from '../handler/user';
 import type {
-    BaseUserDict, ContestBalloonDoc, DiscussionDoc, DomainDoc, FileInfo,
+    ContestBalloonDoc, DiscussionDoc, DomainDoc, FileInfo,
     MessageDoc, ProblemDict, ProblemDoc, RecordDoc,
-    ScoreboardRow, Tdoc, TrainingDoc, User,
+    ScoreboardRow, Tdoc, TrainingDoc, Udict, User,
 } from '../interface';
 import type { DocType } from '../model/document';
 import type { ConnectionHandler, Handler } from './server';
@@ -54,6 +54,13 @@ export interface EventMap extends LifecycleEvents, HandlerEvents {
     'user/get': (udoc: User) => void
     'user/delcache': (content: string | true) => void
 
+    'student/delcache': (content: any) => void
+    'student/delCacheClassStudentsList': (content: string) => void
+    'student/cacheActivity': (cls: number, content: string) => void
+    'student/cacheClassList': (content: string) => void
+    'student/invalidateClassListCache': () => void
+    'student/invalidateActivityCache': () => void
+
     'domain/create': (ddoc: DomainDoc) => VoidReturn
     'domain/before-get': (query: Filter<DomainDoc>) => VoidReturn
     'domain/get': (ddoc: DomainDoc) => VoidReturn
@@ -91,7 +98,7 @@ export interface EventMap extends LifecycleEvents, HandlerEvents {
 
     'contest/before-add': (payload: Partial<Tdoc<30>>) => VoidReturn
     'contest/add': (payload: Partial<Tdoc<30>>, id: ObjectId) => VoidReturn
-    'contest/scoreboard': (tdoc: Tdoc<30>, rows: ScoreboardRow[], udict: BaseUserDict, pdict: ProblemDict) => VoidReturn
+    'contest/scoreboard': (tdoc: Tdoc<30>, rows: ScoreboardRow[], udict: Udict, pdict: ProblemDict) => VoidReturn
     'contest/balloon': (domainId: string, tid: ObjectId, bdoc: ContestBalloonDoc) => VoidReturn
 
     'oplog/log': (type: string, handler: Handler, args: any, data: any) => VoidReturn;

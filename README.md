@@ -511,8 +511,4 @@ Telegram [@webpack_exports_undefined](https://t.me/webpack_exports_undefined)
 
 - [Github](https://github.com/) 为 Hydro 提供了代码托管与自动构建。  
 - [criyle](https://github.com/criyle) 提供评测沙箱实现。  
-- [Vijos](https://github.com/vijos/vj4) 为 Hydro 提供了 UI 框架。  
-
-## Sponsors
-
-- [云斗学院](https://www.yundouxueyuan.com)
+- [Vijos](https://github.com/vijos/vj4) 为 Hydro 提供了UI框架。  

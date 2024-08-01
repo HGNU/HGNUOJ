@@ -17,12 +17,15 @@ import storage from '../model/storage';
 import * as system from '../model/system';
 import TaskModel from '../model/task';
 import user from '../model/user';
+import db from '../service/db';
 import {
     ConnectionHandler, param, subscribe, Types,
 } from '../service/server';
 import { buildProjection } from '../utils';
 import { ContestDetailBaseHandler } from './contest';
 import { postJudge } from './judge';
+
+const collDoc = db.collection('document');
 
 class RecordListHandler extends ContestDetailBaseHandler {
     tdoc?: Tdoc<30>;
@@ -199,7 +202,11 @@ class RecordDetailHandler extends ContestDetailBaseHandler {
         const pdoc = await problem.get(domainId, this.rdoc.pid);
         if (!pdoc?.config || typeof pdoc.config === 'string') throw new ProblemConfigError();
         const priority = await record.submissionPriority(this.user._id, -20);
-        const isContest = this.rdoc.contest && this.rdoc.contest.toString() !== '000000000000000000000000';
+        let isContest = this.rdoc.contest && this.rdoc.contest.toString() !== '000000000000000000000000';
+        if (this.rdoc.contest) {
+            const ruleDoc = await collDoc.findOne({ _id: this.rdoc.contest });
+            isContest = ruleDoc['rule'] !== 'homework';
+        }
         const rdoc = await record.reset(domainId, rid, true);
         this.ctx.broadcast('record/change', rdoc);
         await record.judge(domainId, rid, priority, isContest ? { detail: false } : {});

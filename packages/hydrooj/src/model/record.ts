@@ -17,6 +17,8 @@ import { STATUS } from './builtin';
 import problem from './problem';
 import task from './task';
 
+const collDoc = db.collection('document');
+
 export default class RecordModel {
     static coll = db.collection('record');
     static PROJECTION_LIST: (keyof RecordDoc)[] = [
@@ -131,10 +133,16 @@ export default class RecordModel {
             data.input = args.input || '';
             data.contest = new ObjectId('000000000000000000000000');
         }
+        let isNotContest = true;
+        if (args.type === 'contest') {
+            const ruleDoc = await collDoc.findOne({ _id: data.contest });
+            isNotContest = ruleDoc['rule'] === 'homework';
+        }
         const res = await RecordModel.coll.insertOne(data);
         if (addTask) {
             const priority = await RecordModel.submissionPriority(uid, args.type === 'pretest' ? -20 : (args.type === 'contest' ? 50 : 0));
-            await RecordModel.judge(domainId, res.insertedId, priority, args.type === 'contest' ? { detail: false } : {}, { rejudge: data.rejudged });
+            await RecordModel.judge(domainId, res.insertedId, priority,
+                args.type === 'contest' && !isNotContest ? { detail: false } : {}, { rejudge: data.rejudged });
         }
         return res.insertedId;
     }

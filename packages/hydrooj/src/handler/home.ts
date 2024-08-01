@@ -371,6 +371,7 @@ function set(s: Setting, key: string, value: any) {
                 throw new ValidationError(key);
             }
         }
+        if (s.validator && !s.validator(value)) throw new ValidationError(key);
         return value;
     }
     return undefined;

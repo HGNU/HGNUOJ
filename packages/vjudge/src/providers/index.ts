@@ -5,6 +5,7 @@ import {
     BZOJ as bzoj, HUSTOJ as hustoj, XJOI as xjoi, YBT as ybt,
     YBTBAS as ybtbas,
 } from './hustoj';
+import kattis from './kattis';
 import luogu from './luogu';
 import poj from './poj';
 import spoj from './spoj';
@@ -16,12 +17,13 @@ const vjudge: Record<string, any> = {
     'luogu.legacy': luogu,
     poj,
     spoj,
+    hduoj,
+    kattis,
     uoj,
     hustoj,
     bzoj,
     xjoi,
     ybt,
     ybtbas,
-    hduoj,
 };
 export default vjudge;

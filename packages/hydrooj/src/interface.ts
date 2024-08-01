@@ -38,6 +38,7 @@ export interface SystemKeys {
     'user.quota': number,
 }
 
+type Validator = (value: any) => boolean;
 export interface Setting {
     family: string,
     key: string,
@@ -48,6 +49,7 @@ export interface Setting {
     name: string,
     desc: string,
     flag: number,
+    validator?: Validator
 }
 
 export interface OAuthUserResponse {
@@ -122,7 +124,13 @@ export interface UserPreferenceDoc {
     uid: number;
     content: string;
 }
-
+/* HGNUOJ 学生信息 */
+export interface Student extends Dictionary<any> {
+    _id: number,
+    name: string,
+    stuid: string,
+    class: string
+}
 export type ownerInfo = { owner: number, maintainer?: number[] };
 
 export type User = import('./model/user').User;
@@ -355,7 +363,8 @@ export interface JudgeRequest extends Omit<RecordDoc, '_id' | 'testCases'> {
 }
 
 export interface ScoreboardNode {
-    type: 'string' | 'rank' | 'user' | 'email' | 'record' | 'records' | 'problem' | 'solved' | 'time' | 'total_score';
+    // eslint-disable-next-line max-len
+    type: 'string' | 'rank' | 'user' | 'email' | 'record' | 'records' | 'problem' | 'solved' | 'time' | 'total_score' | 'stu_class' | 'stu_name' | 'stu_stuid';
     value: string;
     raw?: any;
     score?: number;
@@ -388,7 +397,6 @@ export interface Tdoc<docType = document['TYPE_CONTEST'] | document['TYPE_TRAINI
     assign?: string[];
     files?: FileInfo[];
     allowViewCode?: boolean;
-
     // For contest
     lockAt?: Date;
     unlocked?: boolean;
@@ -424,6 +432,7 @@ export interface DomainDoc extends Record<string, any> {
     bulletin: string,
     _join?: any,
     host?: string[],
+    publicToCourses: boolean
 }
 
 // Message
@@ -546,13 +555,13 @@ export interface ContestRule<T = any> {
     ) => Promise<ScoreboardRow>;
     scoreboardRow: (
         this: ContestRule<T>, config: ScoreboardConfig, _: (s: string) => string,
-        tdoc: Tdoc<30>, pdict: ProblemDict, udoc: BaseUser, rank: number, tsdoc: ContestStat & T,
+        tdoc: Tdoc<30>, pdict: ProblemDict, udoc: Udoc | User, rank: number, tsdoc: ContestStat & T,
         meta?: any,
     ) => Promise<ScoreboardRow>;
     scoreboard: (
         this: ContestRule<T>, config: ScoreboardConfig, _: (s: string) => string,
         tdoc: Tdoc<30>, pdict: ProblemDict, cursor: FindCursor<ContestStat & T>,
-    ) => Promise<[board: ScoreboardRow[], udict: BaseUserDict]>;
+    ) => Promise<[board: ScoreboardRow[], udict: Udict]>;
     ranked: (tdoc: Tdoc<30>, cursor: FindCursor<ContestStat & T>) => Promise<[number, ContestStat & T][]>;
 }
 
@@ -681,6 +690,7 @@ declare module './service/db' {
         'blacklist': BlacklistDoc;
         'domain': DomainDoc;
         'domain.user': any;
+        'stu.info': Student;
         'record': RecordDoc;
         'document': any;
         'document.status': StatusDocBase & {
@@ -708,6 +718,7 @@ declare module './service/db' {
 }
 
 export interface Model {
+    student: typeof import('./model/stuinfo').default;
     blacklist: typeof import('./model/blacklist').default,
     builtin: typeof import('./model/builtin'),
     contest: typeof import('./model/contest'),
