@@ -1,9 +1,10 @@
 {% import "components/record.html" as record with context %}
+{% import "components/user.html" as user with context %}
 {% import "components/problem.html" as problem with context %}
 {% import "components/user.html" as user with context %}
-{% set _isPretest = rdoc.contest and rdoc.contest.toString() == '000000000000000000000000' %}
 <tr data-rid="{{ rdoc['_id'] }}">
-  {{ record.render_status_td(rdoc, allDomain = all) }}
+  {% set _isPretest = rdoc.contest and rdoc.contest.toString() == '000000000000000000000000' %}
+  {{ record.render_status_td(rdoc, allDomain = allDomain) }}
   <td class="col--problem col--problem-name">
   {% if handler.user.hasPerm(perm.PERM_REJUDGE) and not rdoc.files.hack and not _isPretest %}
     <form class="form--inline" method="post" action="{{ url('record_detail', rid=rdoc._id, domainId=rdoc.domainId) }}">

@@ -22,7 +22,7 @@ function setDomSelected($dom, selected) {
 }
 
 async function updateSelection() {
-  dirtyCategories.forEach(({ type, category, subcategory }) => {
+  for (const { type, category, subcategory } of dirtyCategories) {
     let item = categories[category];
     const isSelected = item.select || _.some(item.children, (c) => c.select);
     setDomSelected(item.$tag, isSelected);
@@ -35,7 +35,7 @@ async function updateSelection() {
       if (item.select) selections.push(selectionName);
       else _.pull(selections, selectionName);
     }
-  });
+  }
   const requestCategoryTags = _.uniq(selections
     .filter((s) => s.indexOf(',') !== -1)
     .map((s) => s.split(',')[0]));
@@ -59,7 +59,7 @@ function findCategory(name) {
 function parseCategorySelection() {
   const $txt = $('[name="tag"]');
   tags.length = 0;
-  $txt.val().split(',').map((name) => name.trim()).forEach((name) => {
+  for (const name of $txt.val().split(',').map((i) => i.trim())) {
     if (!name) return;
     const [category, subcategory] = findCategory(name);
     if (!category) tags.push(name);
@@ -70,7 +70,7 @@ function parseCategorySelection() {
       categories[category].children[subcategory].select = true;
       dirtyCategories.push({ type: 'subcategory', subcategory, category });
     }
-  });
+  }
   updateSelection();
 }
 
@@ -78,7 +78,7 @@ function buildCategoryFilter() {
   const $container = $('[data-widget-cf-container]');
   if (!$container) return;
   $container.attr('class', 'widget--category-filter row small-up-3 medium-up-2');
-  $container.children('li').get().forEach((category) => {
+  for (const category of $container.children('li').get()) {
     const $category = $(category)
       .attr('class', 'widget--category-filter__category column');
     const $categoryTag = $category
@@ -104,16 +104,16 @@ function buildCategoryFilter() {
         .find('a')
         .attr('class', 'widget--category-filter__tag')
         .attr('data-category', categoryText);
-      $subCategoryTags.get().forEach((subCategoryTag) => {
+      for (const subCategoryTag of $subCategoryTags.get()) {
         const $tag = $(subCategoryTag);
         treeItem.children[$tag.text()] = { select: false, $tag };
-      });
+      }
       Dropdown.getOrConstruct($categoryTag, {
         target: $drop[0],
         position: 'left center',
       });
     }
-  });
+  }
   $(document).on('click', '.widget--category-filter__tag', (ev) => {
     if (ev.shiftKey || ev.metaKey || ev.ctrlKey) return;
     const tag = $(ev.currentTarget).text();
@@ -154,7 +154,7 @@ async function handleSection(ev, sidebar, type) {
   $section.removeClass('animating');
 }
 
-export default new NamedPage(['problem_create', 'problem_edit'], (pagename) => {
+export default new NamedPage(['problem_create', 'problem_edit'], () => {
   let confirmed = false;
   $(document).on('click', '[name="operation"]', (ev) => {
     ev.preventDefault();
@@ -194,6 +194,25 @@ export default new NamedPage(['problem_create', 'problem_edit'], (pagename) => {
     });
   }
 
+  async function handleClickRename(ev) {
+    const file = [$(ev.currentTarget).parent().parent().attr('data-filename')];
+    // eslint-disable-next-line no-alert
+    const newName = prompt(i18n('Enter a new name for the file: '));
+    if (!newName) return;
+    try {
+      await request.post('./files', {
+        operation: 'rename_files',
+        files: file,
+        newNames: [newName],
+        type: 'additional_file',
+      });
+      Notification.success(i18n('File have been renamed.'));
+      await pjax.request({ url: './files?d=additional_file&sidebar=true', push: false });
+    } catch (error) {
+      Notification.error(error.message);
+    }
+  }
+
   async function handleClickRemove(ev) {
     const file = [$(ev.currentTarget).parent().parent().attr('data-filename')];
     const action = await new ConfirmDialog({
@@ -220,14 +239,6 @@ export default new NamedPage(['problem_create', 'problem_edit'], (pagename) => {
     for (const filename of Object.keys(links)) targets.push({ filename, url: links[filename] });
     await download(`${pdoc.docId} ${pdoc.title}.zip`, targets);
   }
-
-  setInterval(() => {
-    $('img').each(function () {
-      if (this.src.startsWith('file://')) {
-        $(this).attr('src', $(this).attr('src').replace('file://', (pagename === 'problem_create' ? `/file/${UserContext._id}/` : './file/')));
-      }
-    });
-  }, 500);
 
   const $main = $('textarea[data-editor]');
   const $field = $('textarea[data-markdown-upload]');
@@ -284,6 +295,7 @@ export default new NamedPage(['problem_create', 'problem_edit'], (pagename) => {
     }
   });
   $(document).on('click', '[name="additional_file__upload"]', () => handleClickUpload());
+  $(document).on('click', '[name="additional_file__rename"]', (ev) => handleClickRename(ev));
   $(document).on('click', '[name="additional_file__delete"]', (ev) => handleClickRemove(ev));
   $(document).on('click', '[name="additional_file__download"]', () => handleClickDownloadAll());
   $(document).on('click', '[name="additional_file__section__expand"]', (ev) => handleSection(ev, 'additional_file', 'expand'));

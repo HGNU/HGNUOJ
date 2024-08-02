@@ -10,7 +10,6 @@ import yaml from 'js-yaml';
 import { Context } from '../context';
 import { Logger } from '../logger';
 import { PRIV } from '../model/builtin';
-import * as bus from '../service/bus';
 import { unwrapExports } from '../utils';
 
 const logger = new Logger('common');
@@ -46,7 +45,7 @@ const getLoader = (type: LoadTask, filename: string) => async function loader(pe
                 else logger.info(`${name} init: %s`, i);
             } catch (e) {
                 fail.push(i);
-                app.inject(
+                app.injectUI(
                     'Notification', `${name} load fail: {0}`,
                     { args: [i], type: 'warn' }, PRIV.PRIV_VIEW_SYSTEM_NOTIFICATION,
                 );
@@ -55,7 +54,6 @@ const getLoader = (type: LoadTask, filename: string) => async function loader(pe
             }
         }
     }
-    await bus.parallel(`app/load/${type}`);
 };
 
 export const handler = getLoader('handler', 'handler');
@@ -68,7 +66,7 @@ export const service = getLoader('service', 'service');
 export async function builtinModel(ctx: Context) {
     const modelDir = path.resolve(__dirname, '..', 'model');
     const models = await fs.readdir(modelDir);
-    for (const t of models) {
+    for (const t of models.filter((i) => i.endsWith('.ts'))) {
         const q = path.resolve(modelDir, t);
         if ('apply' in require(q)) ctx.loader.reloadPlugin(ctx, q, {}, `hydrooj/model/${t.split('.')[0]}`);
     }
@@ -89,13 +87,12 @@ export async function locale(pending: string[], fail: string[]) {
                 logger.info('Locale init: %s', i);
             } catch (e) {
                 fail.push(i);
-                app.inject('Notification', 'Locale load fail: {0}', { args: [i], type: 'warn' }, PRIV.PRIV_VIEW_SYSTEM_NOTIFICATION);
+                app.injectUI('Notification', 'Locale load fail: {0}', { args: [i], type: 'warn' }, PRIV.PRIV_VIEW_SYSTEM_NOTIFICATION);
                 logger.error('Locale Load Fail: %s', i);
                 logger.error(e);
             }
         }
     }
-    await bus.parallel('app/load/locale');
 }
 
 export async function setting(pending: string[], fail: string[], modelSetting: typeof import('../model/setting')) {
@@ -131,13 +128,12 @@ export async function setting(pending: string[], fail: string[], modelSetting: t
                 }
                 logger.info('Config load: %s', i);
             } catch (e) {
-                app.inject('Notification', 'Config load fail: {0}', { args: [i], type: 'warn' }, PRIV.PRIV_VIEW_SYSTEM_NOTIFICATION);
+                app.injectUI('Notification', 'Config load fail: {0}', { args: [i], type: 'warn' }, PRIV.PRIV_VIEW_SYSTEM_NOTIFICATION);
                 logger.error('Config Load Fail: %s', i);
                 logger.error(e);
             }
         }
     }
-    await bus.parallel('app/load/setting');
 }
 
 export async function template(pending: string[], fail: string[]) {
@@ -155,11 +151,10 @@ export async function template(pending: string[], fail: string[]) {
                 logger.info('Template init: %s', i);
             } catch (e) {
                 fail.push(i);
-                app.inject('Notification', 'Template load fail: {0}', { args: [i], type: 'warn' }, PRIV.PRIV_VIEW_SYSTEM_NOTIFICATION);
+                app.injectUI('Notification', 'Template load fail: {0}', { args: [i], type: 'warn' }, PRIV.PRIV_VIEW_SYSTEM_NOTIFICATION);
                 logger.error('Template Load Fail: %s', i);
                 logger.error(e);
             }
         }
     }
-    await bus.parallel('app/load/template');
 }

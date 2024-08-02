@@ -27,7 +27,9 @@ __langname: 简体中文
 'Current dataset: {0}': '当前测试数据: {0}'
 'Discussion: Terms Of Service': 讨论区服务条款
 'Drag and drop testcases here:': '拖拽测试点到此处：'
+'Enter a new name for the file: ': 请输入新的文件名：
 'Failed to get credential: {0}': '获取认证数据失败: {0}'
+'File IO: {0}': 文件IO：{0}
 'File upload failed: {0}': 文件上传失败：{0}
 'Format: category 1, category 2, ..., category n': 格式：分类1, 分类2, ..., 分类n
 'Hello, {0}! You can click following link to active your new email of your {1} account:': 您好，{0}！您可以点击以下链接来激活您 {1} 账户的新电子邮件地址：
@@ -44,12 +46,15 @@ __langname: 简体中文
 'Yes': 是
 "Effects only when Difficulty is not 'Use algorithm calculated'.": 仅当难度不为“使用算法计算”时才起效。
 "Split by ', '.": 由“, ”或“，”分隔。
+"View other's records": 查看他人的记录
 "What's file?": 什么是文件？
 (All Problems): (所有题目)
 (leave blank if none): （若不需要则留空）
 (None): (无)
 (Not changed): 未更改
 6-Digit Code: 6位代码
+A data generator is a program that generates testdata. It should output result to stdout.: 数据生成器是一个生成测试数据的程序。它应该将结果输出到标准输出。
+A standard program is a program that solves the problem. It should output answer to stdout.: 标准程序是一个解决问题的程序。它应该将答案输出到标准输出。
 Aborted: 已放弃
 About {0}: 关于 {0}
 About Markdown: 关于 Markdown
@@ -71,11 +76,15 @@ Add File: 添加文件
 Add module: 添加模块
 Add new data: 添加新数据
 Add new subtask: 添加新子任务
+Add prefix: 添加前缀
+Add prefix/suffix: 添加前缀/后缀
+Add suffix: 添加后缀
 Add testcase: 添加测试点
 Add User: 添加用户
 Add: 添加
 additional_file: 附加文件
 All {0} Contests: 所有 {0} 比赛
+All changes will be lost. Are you sure to clear all answers?: 所有更改将会丢失。您确定要清除所有答案吗？
 All Contests: 所有比赛
 All Homeworks: 所有作业
 All Languages: 所有语言
@@ -91,6 +100,7 @@ An example of dataset: 测试数据集的一个例子
 Any user is allowed to join this domain with an invitation code: 任意用户都可以通过邀请码加入此域
 Any user is allowed to join this domain: 任意用户都可以加入此域
 API: API
+Are you sure to rename the following file?: 确认对重命名以下文件？
 Are you sure you want to delete this subtask?: 确认删除此子任务？
 Argument {0} is invalid.: 非法的参数 {0} 。
 Arguments: 参数
@@ -113,6 +123,7 @@ Awards: 奖项
 Balloon Status: 气球状态
 Basic Info: 基础信息
 Basic: 基础
+Batch replacement: 批量替换
 Be Copied: 被复制
 Begin at: 开始于
 Begin Date: 开始日期
@@ -151,6 +162,7 @@ Choose the background image in your profile page.: 选择您资料页面的背�
 Claim homework: 认领作业
 Claim Homework: 认领作业
 Claimed: 已认领
+Clear answers: 清除答案
 Clear Marks: 清除标记
 Click here to chat with me: 点击这里与我聊天
 click to add: 点击添加
@@ -158,6 +170,7 @@ Clone: 复制
 CLOSE: 关闭
 Code blocks: 代码区块
 Code language: 代码语言
+Code Length: 代码长度
 Code: 代码
 codeFontFamily: 代码字体
 collapse: 收缩
@@ -175,6 +188,7 @@ Confirm deleting this comment? Its replies will be deleted as well.: 确认删�
 Confirm deleting this reply?: 确认删除这个回复吗？
 Confirm rejudge this problem?: 确定要重测这道题吗？
 Confirm removing the selected users?: 您确定将所选用户移除吗？
+Confirm to delete the file?: 确认删除此文件吗？
 Confirm to delete the selected files?: 确认删除所选文件吗？
 Confirm to delete the selected problems?: 确认要删除所选题目吗？
 Confirmation mail has been sent to your new email.: 确认邮件已经发送到您的新电子邮箱。
@@ -240,6 +254,7 @@ Current Status: 当前状态
 currently offline: 目前离线
 Daily update check: 每日自动检查更新
 Dark: 暗色
+Data Generator: 数据生成器
 Data of Problem {0} not found.: 题目 {0} 的数据缺失。
 Data of problem {1} not found.: 题目 {1} 的数据未找到。
 Data of record {0} not found.: 记录 {0} 的数据未找到。
@@ -373,6 +388,8 @@ Failed to parse testcase.: 无法解析测试点信息。
 Feedback: 反馈
 Field {0} or {1} validation failed.: 字段 {0} 或 {1} 验证失败。
 Field {0} validation failed.: 字段 {0} 验证失败。
+File have been deleted.: 文件已被删除。
+File have been renamed.: 文件已被重命名。
 File saved.: 文件已成功保存。
 file too large: 文件过大
 File uploaded successfully.: 上传文件成功
@@ -392,6 +409,9 @@ Freeze scoreboard with N minutes remaining: 在赛事剩余N分钟时封榜
 fs_upload: 上传文件
 Gender Visibility: 性别可见性
 Gender: 性别
+Generate testdata is not supported for this problem type.: 此题目类型不支持生成测试数据。
+Generate Testdata: 生成测试数据
+Generate: 生成
 Gravatar URL Prefix: Gravatar地址前缀
 Group / UID: 小组或 UID
 Group Name: 名称
@@ -464,6 +484,7 @@ Instead of copying the test data directly, the test data of the copied problems 
 Introduce must not exceed 500 characters and it will be shown in the list view.: 简介不能超过 500 个字符，将显示在列表页面中。
 Introduce: 简介
 Invalid password for user {0}.: 用户 {0} 的密码错误。
+Invalid RegExp: 无效的正则表达式。
 Invalid: 无效
 Invitation Code: 邀请码
 IO: 输入输出
@@ -560,10 +581,12 @@ Never expire: 从不过期
 New dataset: 新测试数据
 New Email: 新电子邮件
 New file: 新文件
+New filename(s): 新文件名
 New Password: 新密码
 New Training Plan: 新训练计划
 New: 创建
 No {0} at current.: 当前没有{0}。
+No changes to make.: 没有任何修改。
 No comments so far...: 目前还没有评论...
 No discussion yet...: 目前没有公告…
 No group available: 没有可用小组
@@ -607,6 +630,8 @@ Operating System: 操作系统
 Ops: 运维
 Or, with automatically filled invitation code: 或者，这是可以自动填写邀请码的
 Ordered List: 有序列表
+Original content: 原始内容
+Original filename(s): 原始文件名
 Original Score: 原始分数
 OS Info: 系统信息
 Output: 输出
@@ -625,6 +650,7 @@ Password: 密码
 Passwords don't match.: 验证密码不匹配。
 Path {0} not found.: 路径 {0} 不存在。
 Peak Memory: 峰值内存
+Peak Time: 峰值时间
 perm_contest: 比赛
 perm_discussion: 公告
 perm_general: 一般
@@ -677,7 +703,6 @@ problem_main: 题库
 problem_solution: 题解
 problem_submit: 递交代码
 problem_type.default: 传统题
-problem_type.fileio: '文件IO ({0})'
 problem_type.interactive: 交互题
 problem_type.objective: 客观题
 problem_type.remote_judge: 远端评测题
@@ -691,6 +716,10 @@ problem.import.input_format: '## 输入格式'
 problem.import.limit_and_hint: '## 限制'
 problem.import.output_format: '## 输出格式'
 problem.import.problem_description: '## 题目描述'
+problem.stats.sort.date: 提交时间
+problem.stats.sort.length: 代码长度
+problem.stats.sort.memory: 内存占用
+problem.stats.sort.time: 运行时间
 Problems Sets: 题库
 Problems: 题目
 Processing...: 处理中...
@@ -706,9 +735,9 @@ Quote: 引用
 Rank: 排名
 Ranked Users: 排名用户
 ranking: 排名
+Read all record codes: 读取所有记录的代码
 Read data of own problems: 读取自己题目的数据
 Read data of problem: 读取题目数据
-Read record codes: 读取记录的代码
 Ready (☆▽☆): 马上开始 (☆▽☆)
 Ready: 即将开始
 Recent {0} Records: 最近 {0} 条记录
@@ -726,6 +755,7 @@ Records: 评测记录
 Reference link copied to clipboard!: 引用链接已复制到剪贴板。
 Refresh Records: 刷新评测记录
 Refresh: 刷新
+RegExp supported, quote with "/": 支持正则表达式，使用 "/" 包裹。
 Registered at: 注册于
 Rejudge all submissions: 重测整题
 Rejudge problems: 重测题目
@@ -739,8 +769,10 @@ Remove Selected User: 将所选用户移出
 Remove Selected: 移除选中
 Remove this data: 移除这组数据
 Remove: 移除
+Rename Selected: 重命名选中
 Repeat Password: 重复密码
 Reply discussions: 回复公告
+Replace with: 替换为
 Reply problem solutions: 回复题解
 reply: 回复
 Reply: 回复
@@ -785,6 +817,7 @@ Select Category: 选择标签
 Select User: 选择用户
 Selected categories: 已选标签
 Selected files have been deleted.: 所选文件已被删除。
+Selected files have been renamed.: 所选文件已被重命名。
 Selected problems have been deleted.: 所选题目已被删除。
 Selected roles have been deleted.: 所选角色已删除。
 Selected users have been removed from the domain.: 所选用户已从此域中移除。
@@ -801,6 +834,7 @@ Set Privilege: 设置权限
 Set Role: 设置角色
 Set Roles for Selected User: 设置所选用户的角色
 Set Roles for selected users: 为所选用户设置角色
+Set Score for Contest: 设置赛时分数
 Set time and memory limits: 设置时空限制
 setting_customize: 个性化
 setting_display: 显示偏好
@@ -835,6 +869,8 @@ Source type: 来源类型
 Special Thanks: 特别鸣谢
 Star Topic: 收藏公告
 Standard mode: 标准模式
+Standard Program: 标准程序
+Star Topic: 收藏公告
 Star: 收藏
 Starred Users: 关注用户
 Start at: 开始于
@@ -961,7 +997,7 @@ User ID: 用户 ID
 User Privilege: 用户权限
 User will no longer be allowed to join the domain after expiration.: 过期后，用户将不能加入此域。
 user_detail: 用户
-user_extra_files: 编译额外文件
+user_extra_files: 用户额外文件
 user_login: 登录
 user_logout: 登出
 user_lostpass: 忘记密码

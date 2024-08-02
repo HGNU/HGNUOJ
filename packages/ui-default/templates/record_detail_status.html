@@ -2,10 +2,13 @@
   <div class="section__header">
     <h1 class="section__title">
       <span class="icon record-status--icon {{ model.builtin.STATUS_CODES[rdoc['status']] }}"></span>
+      {% if typeof(rdoc['score']) == 'number' %}
       <span style="color: {{ utils.status.getScoreColor(rdoc.score|default(0)) }}">{{ rdoc.score|default(0) }}</span>
+      {% endif %}
       <span class="record-status--text {{ model.builtin.STATUS_CODES[rdoc['status']] }}">
         {{ model.builtin.STATUS_TEXTS[rdoc['status']] }}
       </span>
+      {% if rdoc.progress %}{{ rdoc.progress|int }}%{% endif %}
     </h1>
   </div>
 {% if rdoc.compilerTexts.length %}
@@ -76,7 +79,7 @@
                 {{ (rdoc.subtasks[subtaskId]['score'] if _key != 'id' else rcdoc.score)|default(0) }}
               </span>
               {% endif %}
-              <span>{{ formatJudgeTexts([rcdoc.message]) if rcdoc.message else '' }}</span>
+              <span class="message">{{ formatJudgeTexts([rcdoc.message]) if rcdoc.message else '' }}</span>
             </td>
             <td class="col--time">{% if rcdoc['status'] == STATUS.STATUS_TIME_LIMIT_EXCEEDED or rcdoc['status'] == STATUS.STATUS_MEMORY_LIMIT_EXCEEDED or rcdoc['status'] == STATUS.STATUS_OUTPUT_LIMIT_EXCEEDED %}&ge;{% endif %}{{ rcdoc.time|round|int }}ms</td>
             <td class="col--memory">{% if rcdoc['status'] == STATUS.STATUS_TIME_LIMIT_EXCEEDED or rcdoc['status'] == STATUS.STATUS_MEMORY_LIMIT_EXCEEDED or rcdoc['status'] == STATUS.STATUS_OUTPUT_LIMIT_EXCEEDED %}&ge;{% endif %}{{ size(rcdoc.memory, 1024) }}</td>

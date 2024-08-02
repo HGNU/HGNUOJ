@@ -351,9 +351,9 @@ QQ Group: QQ 群
 QQ Visibility: QQ 可見性
 Quit Scratchpad: 退出線上程式設計模式
 Rank: 排名
+Read all record codes: 讀取所有記錄的程式碼
 Read data of own problems: 讀取自己題目的資料
 Read data of problem: 讀取題目資料
-Read record codes: 讀取記錄的程式碼
 Ready (☆▽☆): 馬上開始 (☆▽☆)
 Ready: 即將開始
 Recent {0} Records: 最近 {0} 條記錄
@@ -539,6 +539,7 @@ WeChat: 微信
 What is domain?: 什麼是域?
 What's domain?: 什麼是域？
 Whether to show tags in the problem list.: 是否在題目列表中顯示題目的標籤。
+wiki_about: 關於
 Will be used as the domain icon.: 將被用作圖示。
 Without slashes or backslashes: 不含斜槓和反斜槓
 Write Your Comment: 發表您的評論

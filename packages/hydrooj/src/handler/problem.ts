@@ -5,8 +5,10 @@ import {
 } from 'lodash';
 import { Filter, ObjectId } from 'mongodb';
 import { nanoid } from 'nanoid';
+import sanitize from 'sanitize-filename';
 import parser from '@hydrooj/utils/lib/search';
 import { sortFiles, streamToBuffer } from '@hydrooj/utils/lib/utils';
+import type { Context } from '../context';
 import {
     BadRequestError, ContestNotAttendedError, ContestNotEndedError, ContestNotFoundError, ContestNotLiveError,
     FileLimitExceededError, HackFailedError, NoProblemError, NotFoundError,
@@ -17,7 +19,6 @@ import {
 import {
     ProblemDoc, ProblemSearchOptions, ProblemStatusDoc, RecordDoc, User,
 } from '../interface';
-import paginate from '../lib/paginate';
 import { PERM, PRIV, STATUS } from '../model/builtin';
 import * as contest from '../model/contest';
 import * as discussion from '../model/discussion';
@@ -34,72 +35,9 @@ import {
     Handler, param, post, query, route, Types,
 } from '../service/server';
 import { buildProjection } from '../utils';
-import { registerResolver, registerValue } from './api';
 import { ContestDetailBaseHandler } from './contest';
 
 export const parseCategory = (value: string) => value.replace(/，/g, ',').split(',').map((e) => e.trim());
-
-registerValue('FileInfo', [
-    ['_id', 'String!'],
-    ['name', 'String!'],
-    ['size', 'Int'],
-    ['lastModified', 'Date'],
-]);
-registerValue('Problem', [
-    ['_id', 'ObjectID!'],
-    ['owner', 'Int!'],
-    ['domainId', 'String!'],
-    ['docId', 'Int!'],
-    ['docType', 'Int!'],
-    ['pid', 'String'],
-    ['title', 'String!'],
-    ['content', 'String!'],
-    ['config', 'String!'],
-    ['data', '[FileInfo]'],
-    ['additional_file', '[FileInfo]'],
-    ['nSubmit', 'Int'],
-    ['nAccept', 'Int'],
-    ['difficulty', 'Int'],
-    ['tag', '[String]'],
-    ['hidden', 'Boolean'],
-]);
-
-registerResolver(
-    'Query', 'problem(id: Int, pid: String)', 'Problem',
-    async (arg, ctx) => {
-        ctx.checkPerm(PERM.PERM_VIEW);
-        const pdoc = await problem.get(ctx.args.domainId, arg.pid || arg.id);
-        if (!pdoc) return null;
-        if (pdoc.hidden) ctx.checkPerm(PERM.PERM_VIEW_PROBLEM_HIDDEN);
-        ctx.pdoc = pdoc;
-        return pdoc;
-    },
-);
-registerResolver('Query', 'problems(ids: [Int])', '[Problem]', async (arg, ctx) => {
-    ctx.checkPerm(PERM.PERM_VIEW);
-    const res = await problem.getList(ctx.args.domainId, arg.ids, ctx.user.hasPerm(PERM.PERM_VIEW_PROBLEM_HIDDEN) || ctx.user._id,
-        undefined, undefined, true);
-    return Object.keys(res).map((id) => res[+id]);
-}, 'Get a list of problem by ids');
-registerResolver(
-    'Problem', 'manage', 'ProblemManage',
-    (arg, ctx) => {
-        if (!ctx.user.own(ctx.pdoc, PERM.PERM_EDIT_PROBLEM_SELF)) ctx.checkPerm(PERM.PERM_EDIT_PROBLEM);
-        return {};
-    },
-);
-registerResolver(
-    'ProblemManage', 'delete', 'Boolean!',
-    async (arg, ctx) => {
-        const tdocs = await contest.getRelated(ctx.args.domainId, ctx.pdoc.docId);
-        if (tdocs.length) throw new ProblemAlreadyUsedByContestError(ctx.pdoc.docId, tdocs[0]._id);
-        return problem.del(ctx.pdoc.domainId, ctx.pdoc.docId);
-    },
-);
-registerResolver(
-    'ProblemManage', 'edit(title: String, content: String, tag: [String], hidden: Boolean)', 'Problem!',
-    (arg, ctx) => problem.edit(ctx.args.domainId, ctx.pdoc.docId, arg),
-);
 
 function buildQuery(udoc: User) {
     const q: Filter<ProblemDoc> = {};
@@ -119,32 +57,52 @@ const defaultSearch = async (domainId: string, q: string, options?: ProblemSearc
     const filter = { $or: [{ pid: { $regex } }, { title: { $regex } }, { tag: q }] };
     const pdocs = await problem.getMulti(domainId, filter, ['domainId', 'docId', 'pid'])
         .skip(options.skip || 0).limit(options.limit || system.get('pagination.problem')).toArray();
-    if (!Number.isNaN(+q)) {
-        const pdoc = await problem.get(domainId, +q, ['domainId', 'docId', 'pid', 'title']);
+    if (!options.skip) {
+        const pdoc = await problem.get(domainId, +q || q, ['domainId', 'docId', 'pid', 'title']);
         if (pdoc) pdocs.unshift(pdoc);
     }
     return {
         hits: pdocs.map((i) => `${i.domainId}/${i.docId}`),
-        total: await problem.count(domainId, filter),
+        total: Math.max(pdocs.length, await problem.count(domainId, filter)),
         countRelation: 'eq',
     };
 };
 
+export interface QueryContext {
+    query: Filter<ProblemDoc>;
+    sort: string[];
+    pcountRelation: string;
+    parsed: ReturnType<typeof parser.parse>;
+    category: string[];
+    text: string;
+    total: number;
+    fail: boolean;
+}
+
 export class ProblemMainHandler extends Handler {
+    queryContext: QueryContext = {
+        query: {},
+        sort: [],
+        pcountRelation: 'eq',
+        parsed: null,
+        category: [],
+        text: '',
+        total: 0,
+        fail: false,
+    };
+
     @param('page', Types.PositiveInt, true)
     @param('q', Types.Content, true)
     @param('limit', Types.PositiveInt, true)
     @param('pjax', Types.Boolean)
     async get(domainId: string, page = 1, q = '', limit: number, pjax = false) {
         this.response.template = 'problem_main.html';
-        if (!limit || limit > system.get('pagination.problem') || page > 1) limit = system.get('pagination.problem');
+        if (!limit || limit > this.ctx.setting.get('pagination.problem') || page > 1) limit = this.ctx.setting.get('pagination.problem');
+        this.queryContext.query = buildQuery(this.user);
         // eslint-disable-next-line @typescript-eslint/no-shadow
-        const query = buildQuery(this.user);
+        const query = this.queryContext.query;
         const psdict = {};
         const search = global.Hydro.lib.problemSearch || defaultSearch;
-        let sort: string[];
-        let fail = false;
-        let pcountRelation = 'eq';
         const parsed = parser.parse(q, {
             keywords: ['category', 'difficulty'],
             offsets: false,
@@ -163,8 +121,8 @@ export class ProblemMainHandler extends Handler {
         if (text) {
             const result = await search(domainId, q, { skip: (page - 1) * limit, limit });
             total = result.total;
-            pcountRelation = result.countRelation;
-            if (!result.hits.length) fail = true;
+            this.queryContext.pcountRelation = result.countRelation;
+            if (!result.hits.length) this.queryContext.fail = true;
             query.$and ||= [];
             query.$and.push({
                 $or: result.hits.map((i) => {
@@ -172,29 +130,20 @@ export class ProblemMainHandler extends Handler {
                     return { domainId: did, docId: +docId };
                 }),
             });
-            sort = result.hits;
+            this.queryContext.sort = result.hits;
         }
-        await this.ctx.parallel('problem/list', query, this);
+        const sort = this.queryContext.sort;
+        await this.ctx.parallel('problem/list', query, this, sort);
         // eslint-disable-next-line prefer-const
-        let [pdocs, ppcount, pcount] = fail
+        let [pdocs, ppcount, pcount] = this.queryContext.fail
             ? [[], 0, 0]
-            : await problem.list(domainId, query, sort?.length ? 1 : page, limit, undefined, this.user._id);
+            : await problem.list(domainId, query, sort.length ? 1 : page, limit, undefined, this.user._id);
         if (total) {
             pcount = total;
             ppcount = Math.ceil(total / limit);
         }
-        if (sort) pdocs = pdocs.sort((a, b) => sort.indexOf(`${a.domainId}/${a.docId}`) - sort.indexOf(`${b.domainId}/${b.docId}`));
-        if (q && page === 1) {
-            const pdoc = await problem.get(domainId, +q || q, problem.PROJECTION_LIST);
-            if (pdoc && problem.canViewBy(pdoc, this.user)) {
-                const count = pdocs.length;
-                pdocs = pdocs.filter((doc) => doc.docId !== pdoc.docId);
-                pdocs.unshift(pdoc);
-                pcount = pcount - count + pdocs.length;
-            }
-        }
-        // some problems are hidden and cannot be viewed by current user
-        if (pcount > pdocs.length) pcount = pdocs.length;
+        if (sort.length) pdocs = pdocs.sort((a, b) => sort.indexOf(`${a.domainId}/${a.docId}`) - sort.indexOf(`${b.domainId}/${b.docId}`));
+        if (text && pcount > pdocs.length) pcount = pdocs.length;
         if (this.user.hasPriv(PRIV.PRIV_USER_PROFILE)) {
             const domainIds = Array.from(new Set(pdocs.map((i) => i.domainId)));
             await Promise.all(
@@ -212,7 +161,7 @@ export class ProblemMainHandler extends Handler {
                     this.renderHTML('partials/problem_list.html', {
                         page, ppcount, pcount, pdocs, psdict, qs: q,
                     }),
-                    this.renderHTML('partials/problem_stat.html', { pcount, pcountRelation }),
+                    this.renderHTML('partials/problem_stat.html', { pcount, pcountRelation: this.queryContext.pcountRelation }),
                     this.renderHTML('partials/problem_lucky.html', { qs: q }),
                 ])).map((i) => ({ html: i })),
             };
@@ -221,7 +170,7 @@ export class ProblemMainHandler extends Handler {
                 page,
                 pcount,
                 ppcount,
-                pcountRelation,
+                pcountRelation: this.queryContext.pcountRelation,
                 pdocs,
                 psdict,
                 qs: q,
@@ -344,6 +293,7 @@ export class ProblemDetailHandler extends ContestDetailBaseHandler {
             const pdoc = await problem.get(this.pdoc.reference.domainId, this.pdoc.reference.pid);
             if (!ddoc || !pdoc) throw new ProblemNotFoundError(this.pdoc.reference.domainId, this.pdoc.reference.pid);
             this.pdoc.config = pdoc.config;
+            this.pdoc.additional_file = pdoc.additional_file;
         }
         if (typeof this.pdoc.config !== 'string') {
             let baseLangs;
@@ -384,7 +334,8 @@ export class ProblemDetailHandler extends ContestDetailBaseHandler {
             const fields = ['attend', 'startAt'];
             if (this.tdoc.duration) fields.push('endAt');
             if (contest.canShowSelfRecord.call(this, this.tdoc, true)) fields.push('detail');
-            this.response.body.tsdoc = pick(this.tsdoc, fields);
+            this.tsdoc = pick(this.tsdoc, fields);
+            this.response.body.tsdoc = this.tsdoc;
         }
         this.response.template = 'problem_detail.html';
         this.UiContext.extraTitleContent = this.pdoc.title;
@@ -394,28 +345,20 @@ export class ProblemDetailHandler extends ContestDetailBaseHandler {
     @query('pjax', Types.Boolean)
     async get(...args: any[]) {
         // Navigate to current additional file download
-        // e.g. ![img](a.jpg) will navigate to ![img](./pid/file/a.jpg)
+        // e.g. ![img](file://a.jpg) will navigate to ![img](./pid/file/a.jpg)
         if (!this.request.json || args[2]) {
-            if (args[1]) {
-                this.response.body.pdoc.content = this.response.body.pdoc.content
-                    .replace(/\(file:\/\/(.+?)\)/g, (str) => {
-                        const info = str.match(/\(file:\/\/(.+?)\)/);
-                        return `(./${this.pdoc.docId}/file/${info[1]}${info[1].includes('?') ? '&' : '?'}tid=${args[1]})`;
-                    })
-                    .replace(/="file:\/\/(.+?)"/g, (str) => {
-                        const info = str.match(/="file:\/\/(.+?)"/);
-                        return `="./${this.pdoc.docId}/file/${info[1]}${info[1].includes('?') ? '&' : '?'}tid=${args[1]}"`;
-                    })
-                    .replace(/=\\"file:\/\/(.+?)\\"/g, (str) => {
-                        const info = str.match(/=\\"file:\/\/(.+?)\\"/);
-                        return `=\\"./${this.pdoc.docId}/file/${info[1]}${info[1].includes('?') ? '&' : '?'}tid=${args[1]}\\"`;
-                    });
-            } else {
-                this.response.body.pdoc.content = this.response.body.pdoc.content
-                    .replace(/\(file:\/\//g, `(./${this.pdoc.docId}/file/`)
-                    .replace(/="file:\/\//g, `="./${this.pdoc.docId}/file/`)
-                    .replace(/=\\"file:\/\//g, `=\\"${this.pdoc.docId}/file/`);
-            }
+            this.response.body.pdoc.content = this.response.body.pdoc.content
+                .replace(/file:\/\/([^ \n)\\"]+)/g, (str: string) => {
+                    const info = str.match(/file:\/\/([^ \n)\\"]+)/);
+                    const fileinfo = info[1];
+                    let filename = fileinfo.split('?')[0]; // remove querystring
+                    try {
+                        filename = decodeURIComponent(filename);
+                    } catch (e) { }
+                    if (!this.pdoc.additional_file?.find((i) => i.name === filename)) return str;
+                    if (!args[1]) return `./${this.pdoc.docId}/file/${fileinfo}`;
+                    return `./${this.pdoc.docId}/file/${fileinfo}${fileinfo.includes('?') ? '&' : '?'}tid=${args[1]}`;
+                });
         }
         this.response.body.page_name = this.tdoc
             ? this.tdoc.rule === 'homework'
@@ -448,7 +391,7 @@ export class ProblemDetailHandler extends ContestDetailBaseHandler {
         this.checkPerm(PERM.PERM_REJUDGE_PROBLEM);
         const rdocs = await record.getMulti(domainId, {
             pid,
-            contest: { $ne: new ObjectId('0'.repeat(24)) },
+            contest: { $nin: [record.RECORD_GENERATE, record.RECORD_PRETEST] },
             status: { $ne: STATUS.STATUS_CANCELED },
             'files.hack': { $exists: false },
         }).project({ _id: 1, contest: 1 }).toArray();
@@ -497,18 +440,12 @@ export class ProblemSubmitHandler extends ProblemDetailHandler {
         const langRange = (typeof this.pdoc.config === 'object' && this.pdoc.config.langs)
             ? Object.fromEntries(this.pdoc.config.langs.map((i) => [i, setting.langs[i]?.display || i]))
             : setting.SETTINGS_BY_KEY.codeLang.range;
-        this.response.body = {
-            langRange,
-            pdoc: this.pdoc,
-            udoc: this.udoc,
-            tdoc: this.tdoc,
-            title: this.pdoc.title,
-            page_name: this.tdoc
-                ? this.tdoc.rule === 'homework'
-                    ? 'homework_detail_problem_submit'
-                    : 'contest_detail_problem_submit'
-                : 'problem_submit',
-        };
+        this.response.body.langRange = langRange;
+        this.response.body.page_name = this.tdoc
+            ? this.tdoc.rule === 'homework'
+                ? 'homework_detail_problem_submit'
+                : 'contest_detail_problem_submit'
+            : 'problem_submit';
     }
 
     @param('lang', Types.Name)
@@ -526,7 +463,7 @@ export class ProblemSubmitHandler extends ProblemDetailHandler {
         }
         if (pretest) {
             if (setting.langs[lang]?.pretest) lang = setting.langs[lang].pretest as string;
-            if (!['default', 'fileio', 'remote_judge'].includes(this.response.body.pdoc.config?.type)) {
+            if (!['default', 'remote_judge'].includes(this.response.body.pdoc.config?.type)) {
                 throw new ProblemNotAllowPretestError('type');
             }
         }
@@ -550,9 +487,8 @@ export class ProblemSubmitHandler extends ProblemDetailHandler {
         }
         const rid = await record.add(
             domainId, this.pdoc.docId, this.user._id, lang, code, true,
-            pretest ? { input, type: 'pretest' } : { contest: tid, files, type: tid ? 'contest' : 'judge' },
+            pretest ? { input, type: 'pretest' } : { contest: tid, files, type: 'judge' },
         );
-        const rdoc = await record.get(domainId, rid);
         if (!pretest) {
             await Promise.all([
                 problem.inc(domainId, this.pdoc.docId, 'nSubmit', 1),
@@ -561,10 +497,9 @@ export class ProblemSubmitHandler extends ProblemDetailHandler {
                 tid && contest.updateStatus(domainId, tid, this.user._id, rid, this.pdoc.docId),
             ]);
         }
-        this.ctx.broadcast('record/change', rdoc);
         if (tid && !pretest && !contest.canShowSelfRecord.call(this, this.tdoc)) {
             this.response.body = { tid };
-            this.response.redirect = this.url(this.tdoc.rule === 'homework' ? 'homework_detail' : 'contest_detail', { tid });
+            this.response.redirect = this.url(this.tdoc.rule === 'homework' ? 'homework_detail' : 'contest_problemlist', { tid });
         } else {
             this.response.body = { rid };
             this.response.redirect = this.url('record_detail', { rid });
@@ -603,26 +538,30 @@ export class ProblemHackHandler extends ProblemDetailHandler {
     }
 
     @param('input', Types.String, true)
+    @param('autoOrganizeInput', Types.Boolean, true)
     @param('tid', Types.ObjectId, true)
-    async post(domainId: string, input = '', tid?: ObjectId) {
+    async post(domainId: string, input = '', autoOrganizeInput = false, tid?: ObjectId) {
         await this.limitRate('add_record', 60, system.get('limit.submission_user'), true);
         await this.limitRate('add_record', 60, system.get('limit.submission'), false);
         const id = `${this.user._id}/${nanoid()}`;
         if (this.request.files?.file?.size > 0) {
             const file = this.request.files.file;
-            if (!file || file.size > 128 * 1024 * 1024) throw new ValidationError('input');
+            if (!file || file.size > 2 * 1024 * 1024) throw new ValidationError('input');
             await storage.put(`submission/${id}`, file.filepath, this.user._id);
         } else if (input) {
+            if (autoOrganizeInput) input = input.replace(/\s+\n/g, '\n').replace(/\s+ /g, ' ');
             await storage.put(`submission/${id}`, Buffer.from(input), this.user._id);
         }
         const rid = await record.add(
             domainId, this.pdoc.docId, this.user._id,
             this.rdoc.lang, this.rdoc.code, true,
-            { contest: tid, type: 'hack', files: { hack: `${id}#input.txt` } },
+            {
+                contest: tid,
+                type: 'hack',
+                hackTarget: this.rdoc._id,
+                files: { hack: `${id}#input.txt` },
+            },
         );
-        const rdoc = await record.get(domainId, rid);
-        // TODO contest: update status;
-        this.ctx.broadcast('record/change', rdoc);
         this.response.body = { rid };
         this.response.redirect = this.url('record_detail', { rid });
     }
@@ -685,6 +624,7 @@ export class ProblemFilesHandler extends ProblemDetailHandler {
     @param('pjax', Types.Boolean)
     @param('sidebar', Types.Boolean)
     async get(domainId: string, d = ['testdata', 'additional_file'], pjax = false, sidebar = false) {
+        if (this.tdoc) throw new ContestNotEndedError();
         this.response.body.testdata = d.includes('testdata') ? sortFiles(this.pdoc.data || []) : [];
         this.response.body.reference = this.pdoc.reference;
         this.response.body.additional_file = d.includes('additional_file') ? sortFiles(this.pdoc.additional_file || []) : [];
@@ -692,7 +632,7 @@ export class ProblemFilesHandler extends ProblemDetailHandler {
             const { testdata, additional_file } = this.response.body;
             const owner = await user.getById(domainId, this.pdoc.owner);
             const args = {
-                testdata, additional_file, pdoc: this.pdoc, owner_udoc: owner, sidebar,
+                testdata, additional_file, pdoc: this.pdoc, owner_udoc: owner, sidebar, can_edit: true,
             };
             const tasks = [];
             if (d.includes('testdata')) tasks.push(this.renderHTML('partials/problem_files.html', { ...args, filetype: 'testdata' }));
@@ -703,6 +643,12 @@ export class ProblemFilesHandler extends ProblemDetailHandler {
             };
             this.response.template = '';
         } else this.response.template = 'problem_files.html';
+    }
+
+    async post() {
+        if (this.args.operation === 'get_links') return;
+        if (this.pdoc.reference) throw new ProblemIsReferencedError('edit files');
+        if (!this.user.own(this.pdoc, PERM.PERM_EDIT_PROBLEM_SELF)) this.checkPerm(PERM.PERM_EDIT_PROBLEM);
     }
 
     @post('files', Types.Set)
@@ -737,11 +683,8 @@ export class ProblemFilesHandler extends ProblemDetailHandler {
     @post('filename', Types.Filename, true)
     @post('type', Types.Range(['testdata', 'additional_file']), true)
     async postUploadFile(domainId: string, filename: string, type = 'testdata') {
-        if (this.pdoc.reference) throw new ProblemIsReferencedError('edit files');
         if (!this.request.files.file) throw new ValidationError('file');
         filename ||= this.request.files.file.originalFilename || String.random(16);
-        if (filename.includes('/') || filename.includes('..')) throw new ValidationError('filename', null, 'Bad filename');
-        if (!this.user.own(this.pdoc, PERM.PERM_EDIT_PROBLEM_SELF)) this.checkPerm(PERM.PERM_EDIT_PROBLEM);
         const files = [];
         if (filename.endsWith('.zip') && type === 'testdata') {
             let zip: AdmZip;
@@ -752,10 +695,10 @@ export class ProblemFilesHandler extends ProblemDetailHandler {
             }
             const entries = zip.getEntries();
             for (const entry of entries) {
-                if (!entry.name) continue;
+                if (!entry.name || entry.isDirectory) continue;
                 files.push({
                     type,
-                    name: entry.name,
+                    name: sanitize(entry.name),
                     size: entry.header.size,
                     data: () => entry.getData(),
                 });
@@ -793,13 +736,35 @@ export class ProblemFilesHandler extends ProblemDetailHandler {
     }
 
     @post('files', Types.ArrayOf(Types.Filename))
+    @post('newNames', Types.ArrayOf(Types.Filename))
+    @post('type', Types.Range(['testdata', 'additional_file']), true)
+    async postRenameFiles(domainId: string, files: string[], newNames: string[], type = 'testdata') {
+        if (files.length !== newNames.length) throw new ValidationError('files', 'newNames');
+        await Promise.all(files.map(async (file, index) => {
+            const newName = newNames[index];
+            if (type === 'testdata') await problem.renameTestdata(domainId, this.pdoc.docId, file, newName, this.user._id);
+            else await problem.renameAdditionalFile(domainId, this.pdoc.docId, file, newName, this.user._id);
+        }));
+        this.back();
+    }
+
+    @post('files', Types.ArrayOf(Types.Filename))
     @post('type', Types.Range(['testdata', 'additional_file']), true)
     async postDeleteFiles(domainId: string, files: string[], type = 'testdata') {
-        if (this.pdoc.reference) throw new ProblemIsReferencedError('delete files');
-        if (!this.user.own(this.pdoc, PERM.PERM_EDIT_PROBLEM_SELF)) this.checkPerm(PERM.PERM_EDIT_PROBLEM);
         if (type === 'testdata') await problem.delTestdata(domainId, this.pdoc.docId, files, this.user._id);
         else await problem.delAdditionalFile(domainId, this.pdoc.docId, files, this.user._id);
         this.back();
+    }
+
+    @post('std', Types.Filename)
+    @post('gen', Types.Filename)
+    async postGenerateTestdata(domainId: string, std: string, gen: string) {
+        if (!this.pdoc.data?.find((i) => i.name === std)) throw new BadRequestError();
+        if (!this.pdoc.data?.find((i) => i.name === gen)) throw new BadRequestError();
+        const rid = await record.add(domainId, this.pdoc.docId, this.user._id, '_', `${gen}\n${std}`, true, {
+            type: 'generate',
+        });
+        this.response.redirect = this.url('record_detail', { rid });
     }
 }
 
@@ -807,7 +772,9 @@ export class ProblemFileDownloadHandler extends ProblemDetailHandler {
     @query('type', Types.Range(['additional_file', 'testdata']), true)
     @param('filename', Types.Filename)
     @param('noDisposition', Types.Boolean)
-    async get(domainId: string, type = 'additional_file', filename: string, noDisposition = false) {
+    @query('tid', Types.ObjectId, true)
+    async get(domainId: string, type = 'additional_file', filename: string, noDisposition = false, tid: ObjectId) {
+        if (!tid) this.checkPerm(PERM.PERM_VIEW_PROBLEM);
         if (this.pdoc.reference) {
             if (type === 'testdata') throw new ProblemIsReferencedError('download testdata');
             this.pdoc = await problem.get(this.pdoc.reference.domainId, this.pdoc.reference.pid);
@@ -841,10 +808,10 @@ export class ProblemSolutionHandler extends ProblemDetailHandler {
             this.checkPerm(PERM.PERM_VIEW_PROBLEM_SOLUTION);
         }
         // eslint-disable-next-line prefer-const
-        let [psdocs, pcount, pscount] = await paginate(
+        let [psdocs, pcount, pscount] = await this.paginate(
             solution.getMulti(domainId, this.pdoc.docId),
             page,
-            system.get('pagination.solution'),
+            'solution',
         );
         if (sid) {
             psdocs = [await solution.get(domainId, sid)];
@@ -963,6 +930,32 @@ export class ProblemSolutionRawHandler extends ProblemDetailHandler {
     }
 }
 
+export class ProblemStatisticsHandler extends ProblemDetailHandler {
+    @param('sort', Types.Range(Object.keys(record.STAT_QUERY)), true)
+    @param('direction', Types.Range([-1, 1]), true)
+    @param('lang', Types.String, true)
+    @param('page', Types.PositiveInt, true)
+    async get(domainId: string, sort = 'time', direction: 1 | -1 = 1, lang?: string, page = 1) {
+        if (this.tdoc) throw new ContestNotEndedError();
+        const [rsdocs, pcount, rscount] = await this.paginate(
+            record.getMultiStat(domainId, {
+                pid: this.pdoc.docId,
+                ...lang ? { lang } : {},
+            }, record.STAT_QUERY[sort][Math.max(direction, 0)]),
+            page,
+            'record',
+        );
+        const [udict, udoc] = await Promise.all([
+            user.getListForRender(domainId, rsdocs.map((i) => i.uid), this.user.hasPerm(PERM.PERM_VIEW_DISPLAYNAME)),
+            user.getById(domainId, this.pdoc.owner),
+        ]);
+        this.response.template = 'problem_statistics.html';
+        this.response.body = {
+            rsdocs, page, pcount, rscount, sort, direction, pdoc: this.pdoc, udict, types: Object.keys(record.STAT_QUERY), udoc,
+        };
+    }
+}
+
 export class ProblemCreateHandler extends Handler {
     async get() {
         this.response.template = 'problem_edit.html';
@@ -1005,7 +998,7 @@ export class ProblemCreateHandler extends Handler {
 export class ProblemPrefixListHandler extends Handler {
     @param('prefix', Types.Name)
     async get(domainId: string, prefix: string) {
-        const projection = ['domainId', 'docId', 'pid', 'title'] as const;
+        const projection = ['domainId', 'docId', 'pid', 'title', 'hidden'] as const;
         const [pdocs, pdoc, apdoc] = await Promise.all([
             problem.getPrefixList(domainId, prefix),
             problem.get(domainId, Number.isSafeInteger(+prefix) ? +prefix : prefix, projection),
@@ -1024,7 +1017,7 @@ export class ProblemPrefixListHandler extends Handler {
     }
 }
 
-export async function apply(ctx) {
+export async function apply(ctx: Context) {
     ctx.Route('problem_main', '/p', ProblemMainHandler, PERM.PERM_VIEW_PROBLEM);
     ctx.Route('problem_random', '/problem/random', ProblemRandomHandler, PERM.PERM_VIEW_PROBLEM);
     ctx.Route('problem_detail', '/p/:pid', ProblemDetailHandler);
@@ -1033,11 +1026,73 @@ export async function apply(ctx) {
     ctx.Route('problem_edit', '/p/:pid/edit', ProblemEditHandler);
     ctx.Route('problem_config', '/p/:pid/config', ProblemConfigHandler);
     ctx.Route('problem_files', '/p/:pid/files', ProblemFilesHandler, PERM.PERM_VIEW_PROBLEM);
-    ctx.Route('problem_file_download', '/p/:pid/file/:filename', ProblemFileDownloadHandler, PERM.PERM_VIEW_PROBLEM);
+    ctx.Route('problem_file_download', '/p/:pid/file/:filename', ProblemFileDownloadHandler);
     ctx.Route('problem_solution', '/p/:pid/solution', ProblemSolutionHandler, PERM.PERM_VIEW_PROBLEM);
     ctx.Route('problem_solution_detail', '/p/:pid/solution/:sid', ProblemSolutionHandler, PERM.PERM_VIEW_PROBLEM);
     ctx.Route('problem_solution_raw', '/p/:pid/solution/:psid/raw', ProblemSolutionRawHandler, PERM.PERM_VIEW_PROBLEM);
     ctx.Route('problem_solution_reply_raw', '/p/:pid/solution/:psid/:psrid/raw', ProblemSolutionRawHandler, PERM.PERM_VIEW_PROBLEM);
+    ctx.Route('problem_statistics', '/p/:pid/stat', ProblemStatisticsHandler, PERM.PERM_VIEW_PROBLEM);
     ctx.Route('problem_create', '/problem/create', ProblemCreateHandler, PERM.PERM_CREATE_PROBLEM);
     ctx.Route('problem_prefix_list', '/problem/list', ProblemPrefixListHandler, PERM.PERM_VIEW_PROBLEM);
+    ctx.inject(['api'], ({ api }) => {
+        api.value('FileInfo', [
+            ['_id', 'String!'],
+            ['name', 'String!'],
+            ['size', 'Int'],
+            ['lastModified', 'Date'],
+        ]);
+        api.value('Problem', [
+            ['_id', 'ObjectID!'],
+            ['owner', 'Int!'],
+            ['domainId', 'String!'],
+            ['docId', 'Int!'],
+            ['docType', 'Int!'],
+            ['pid', 'String'],
+            ['title', 'String!'],
+            ['content', 'String!'],
+            ['data', '[FileInfo]'],
+            ['additional_file', '[FileInfo]'],
+            ['nSubmit', 'Int'],
+            ['nAccept', 'Int'],
+            ['difficulty', 'Int'],
+            ['tag', '[String]'],
+            ['hidden', 'Boolean'],
+        ]);
+        api.resolver(
+            'Query', 'problem(id: Int, pid: String)', 'Problem',
+            async (arg, c) => {
+                c.checkPerm(PERM.PERM_VIEW);
+                const pdoc = await problem.get(c.args.domainId, arg.pid || arg.id);
+                if (!pdoc) return null;
+                if (pdoc.hidden) c.checkPerm(PERM.PERM_VIEW_PROBLEM_HIDDEN);
+                c.pdoc = pdoc;
+                return pdoc;
+            },
+        );
+        api.resolver('Query', 'problems(ids: [Int])', '[Problem]', async (arg, c) => {
+            c.checkPerm(PERM.PERM_VIEW);
+            const res = await problem.getList(c.args.domainId, arg.ids, c.user.hasPerm(PERM.PERM_VIEW_PROBLEM_HIDDEN) || c.user._id,
+                undefined, undefined, true);
+            return Object.keys(res).map((id) => res[+id]);
+        }, 'Get a list of problem by ids');
+        api.resolver(
+            'Problem', 'manage', 'ProblemManage',
+            (arg, c) => {
+                if (!c.user.own(c.pdoc, PERM.PERM_EDIT_PROBLEM_SELF)) c.checkPerm(PERM.PERM_EDIT_PROBLEM);
+                return {};
+            },
+        );
+        api.resolver(
+            'ProblemManage', 'delete', 'Boolean!',
+            async (arg, c) => {
+                const tdocs = await contest.getRelated(c.args.domainId, c.pdoc.docId);
+                if (tdocs.length) throw new ProblemAlreadyUsedByContestError(c.pdoc.docId, tdocs[0]._id);
+                return problem.del(c.pdoc.domainId, c.pdoc.docId);
+            },
+        );
+        api.resolver(
+            'ProblemManage', 'edit(title: String, content: String, tag: [String], hidden: Boolean)', 'Problem!',
+            (arg, c) => problem.edit(c.args.domainId, c.pdoc.docId, arg),
+        );
+    });
 }

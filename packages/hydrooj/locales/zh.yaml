@@ -1,41 +1,42 @@
 __id: zh
 __langname: 简体中文
 '"{data}" copied to clipboard!': “{data}”已复制到剪贴板！
-'{0} {1} delete your discussion reply {2} in "{3}"({4}).' : '{0} {1} 从公告 {3}({4}) 删除了你的回复 {2}。'
-'{0} comments': '{0} 条评论'
-'{0} discussions': '{0} 条公告'
-'{0} is a moderator of this domain.': '{}是这个域的管理者之一。'
-'{0} limit exceeded (limit: {2} operations in {1} seconds).': '{0} 超过频率限制。限制：{1} 秒内最多 {2} 次操作。'
-'{0} problems': '{0} 道题'
-'{0} sections': '{0} 小节'
-'{0} solutions': '{0} 条题解'
-'{0} views': '{0} 次查看'
-'{0}: Permissions': '{0}: 权限'
-'{0}: Roles': '{0}: 角色'
-'{0}: Users': '{0}: 用户'
-'# My Submissions': '我的递交数'
-'# Submissions': '递交数'
-'↓ # Comments': '↓ 评论数'
-'↓ # Enrollees': '↓ 参与人数'
-'↓ # Likes': '↓ 赞数'
-'↓ # Stars': '↓ 收藏数'
-'↓ Create Time': '↓ 创建时间'
-'↓ Update Time': '↓ 更新时间'
-'A domain ID cannot be changed after creation. It is supposed to be:': '创建后将无法更改 ID。ID 必须满足以下条件：'
-'Copy "{data}" failed :(': '复制“{data}”失败 :('
-'Copy failed :(': '复制失败 :('
-'Current dataset: {0}': '当前测试数据: {0}'
-'Discussion: Terms Of Service': 公告区服务条款
-'Format: category 1, sub category 1.1, sub category 1.2, ..., sub category 1.x, ..., category n, sub category n.1, sub category n.2, ..., sub category n.m, ...': 格式：分类1, 子分类1.1, 子分类1.2, ..., 子分类1.x, ..., 分类n, 子分类n.1, 子分类n.2, ..., 子分类n.m, ...
-'Join {0}': '加入 {0}'
-'No': 否
-'Note: Problem title may not be hidden.': 注意：题目标题可能不会被隐藏。
-'Original score: {0}': '原得分: {0}'
-'Role {1} already exists in domain {0}.': '域 {0} 中已存在角色 {1}。'
-'Solved {0} problems, RP: {1} (No. {2})': '解决了 {0} 道题目，RP: {1} (No. {2})'
-'The value `{1}` of {0} already exists.': '{0} 的值 `{1}` 已经存在。'
-'Yes': 是
+'{0} {1} delete your discussion reply {2} in "{3}"({4}).': "{0} {1} 从公告 {3}({4}) 删除了你的回复 {2}。"
+"{0} comments": "{0} 条评论"
+"{0} discussions": "{0} 条公告"
+"{0} is a moderator of this domain.": "{}是这个域的管理者之一。"
+"{0} limit exceeded (limit: {2} operations in {1} seconds).": "{0} 超过频率限制。限制：{1} 秒内最多 {2} 次操作。"
+"{0} problems": "{0} 道题"
+"{0} sections": "{0} 小节"
+"{0} solutions": "{0} 条题解"
+"{0} views": "{0} 次查看"
+"{0}: Permissions": "{0}: 权限"
+"{0}: Roles": "{0}: 角色"
+"{0}: Users": "{0}: 用户"
+"# My Submissions": "我的递交数"
+"# Submissions": "递交数"
+"↓ # Comments": "↓ 评论数"
+"↓ # Enrollees": "↓ 参与人数"
+"↓ # Likes": "↓ 赞数"
+"↓ # Stars": "↓ 收藏数"
+"↓ Create Time": "↓ 创建时间"
+"↓ Update Time": "↓ 更新时间"
+"A domain ID cannot be changed after creation. It is supposed to be:": "创建后将无法更改 ID。ID 必须满足以下条件："
+'Copy "{data}" failed :(': "复制“{data}”失败 :("
+"Copy failed :(": "复制失败 :("
+"Current dataset: {0}": "当前测试数据: {0}"
+"Discussion: Terms Of Service": 公告区服务条款
+"Format: category 1, sub category 1.1, sub category 1.2, ..., sub category 1.x, ..., category n, sub category n.1, sub category n.2, ..., sub category n.m, ...": 格式：分类1, 子分类1.1, 子分类1.2, ..., 子分类1.x, ..., 分类n, 子分类n.1, 子分类n.2, ..., 子分类n.m, ...
+"Join {0}": "加入 {0}"
+"No": 否
+"Note: Problem title may not be hidden.": 注意：题目标题可能不会被隐藏。
+"Original score: {0}": "原得分: {0}"
+"Role {1} already exists in domain {0}.": "域 {0} 中已存在角色 {1}。"
+"Solved {0} problems, RP: {1} (No. {2})": "解决了 {0} 道题目，RP: {1} (No. {2})"
+"The value `{1}` of {0} already exists.": "{0} 的值 `{1}` 已经存在。"
+"Yes": 是
 "Effects only when Difficulty is not 'Use algorithm calculated'.": 仅当难度不为“使用算法计算”时才起效。
+"Or upload a file:": 或者上传一个文件：
 "Split by ',' '.'": 由“, ”或“，”分隔。
 "What's file?": 什么是文件？
 (All Problems): (所有题目)
@@ -61,8 +62,8 @@ Add new data: 添加新数据
 Add User: 添加用户
 Add: 添加
 Additional File: 附加文件
-Admin {0} delete your discussion "{1}". : 管理员 {0} 删除了你的公告 "{1}"。
-Admin {0} delete your discussion tail reply {1} in "{2}"({3}). : 管理员 {0} 从公告 {2}({3}) 中删除了你的楼中楼回复 {1}。
+Admin {0} delete your discussion "{1}".: 管理员 {0} 删除了你的公告 "{1}"。
+Admin {0} delete your discussion tail reply {1} in "{2}"({3}).: 管理员 {0} 从公告 {2}({3}) 中删除了你的楼中楼回复 {1}。
 All {0} Contests: 所有 {0} 比赛
 All Contests: 所有比赛
 All Homeworks: 所有作业
@@ -87,7 +88,9 @@ Attend Contest: 参加比赛
 Attend contests: 参加比赛
 Attended: 已参加
 author: 作者
+Auto adjust the format of line breaks and remove unnecessary whitespace characters.: 自动调整换行符格式，并移除不必要的空白字符。
 Auto format code: 自动格式化代码
+Auto organize input: 自动整理输入
 Avatar: 头像
 Back to contest list: 返回比赛列表
 Be Copied: 被复制
@@ -282,6 +285,7 @@ Domain: 域
 Don't have an account?: 还没有账户？
 Done: 已结束
 Download Dataset: 下载数据集
+Download Hack Input: 下载 Hack 输入
 Download link copied to clipboard!: 下载链接已复制到剪贴板。
 Download: 下载
 Downvote: 差评
@@ -378,6 +382,7 @@ homework_detail_problem_submit: 递交作业题目
 homework_detail_problem: 题目详情
 homework_detail: 作业详情
 homework_edit: 编辑作业
+homework_files: 作业文件
 homework_main: 作业
 homework_scoreboard: 作业成绩表
 homework_status: 作业成绩表
@@ -513,7 +518,7 @@ No solutions so far...: 目前还没有题解...
 No Submissions: 没有递交
 No testdata at current.: 暂无测试数据。
 No user is allowed to join this domain: 没有用户可以自助加入此域
-no_translation_warn: ''
+no_translation_warn: ""
 None: 无
 Not Attended: 未参加
 Not available: 不可用
@@ -603,20 +608,21 @@ problem_create: 创建题目
 problem_detail: 题目详情
 problem_edit: 编辑题目
 problem_files: 题目文件
+problem_hack: Hack
 problem_import: 导入题目
 problem_main: 题库
 problem_solution: 题解
 problem_statistics: 题目统计
 problem_submit: 递交代码
-problem-category-delim: '|'
+problem-category-delim: "|"
 problem-subcategory-delim: 、
 Problem: 题目
-problem.import.additional_file: '## 附加文件'
-problem.import.hint: '## 提示'
-problem.import.input_format: '## 输入格式'
-problem.import.limit_and_hint: '## 限制'
-problem.import.output_format: '## 输出格式'
-problem.import.problem_description: '## 题目描述'
+problem.import.additional_file: "## 附加文件"
+problem.import.hint: "## 提示"
+problem.import.input_format: "## 输入格式"
+problem.import.limit_and_hint: "## 限制"
+problem.import.output_format: "## 输出格式"
+problem.import.problem_description: "## 题目描述"
 Problems per page: 每页展示的题目数量
 Problems Sets: 题库
 Problems: 题目
@@ -631,7 +637,7 @@ Quit Scratchpad: 退出在线编程模式
 Quote: 引用
 Rank: 排名
 ranking: 排名
-React to discussion: 反应公告
+Ranking: 排名
 Read record codes after accept: 题目通过后读取记录的代码
 Recalculates nSubmit and nAccept in problem status.: 重新计算每道题目的 AC 量和提交量
 Recommended: 推荐
@@ -819,6 +825,7 @@ Training requirement is not satisfied.: 不满足训练条件。
 training_create: 创建训练
 training_detail: 训练详情
 training_edit: 编辑训练
+training_files: 训练文件
 training_main: 训练
 Training: 训练
 Trainings per page: 每页展示的训练数量
@@ -858,6 +865,7 @@ user_logout: 登出
 user_lostpass: 忘记密码
 user_register_mail_sent: 注册邮件已发送
 user_register: 注册
+user_sudo: 用户安全授权
 User-defined role: 用户定义的角色
 User: 用户
 Username / UID: 用户名或 UID
@@ -909,6 +917,7 @@ What's domain?: 什么是域？
 What's script?: 什么是脚本？
 What's this?: 这是什么？
 Whether to show tags in the problem list.: 是否在题目列表中显示题目的标签。
+wiki_about: 关于
 Will be used as the domain icon.: 将被用作系统图标。
 With this feature, you can copy problems that you can view from a domain to some other domain. Their title, content, tags and categories will be copied. However, their test data are not copied directly.: 您可以通过这个功能将某域下您能查看的题目复制到其它域中，题目的标题、描述、标签与分类将被复制过来。但是测试数据不会被直接复制。
 With this feature, you can import problems that you can view from a site to here. Their title, content, tags and categories will be imported. However, their test data are not copied directly.: 您可以通过这个功能将其他 OJ 的题目导入到本站。题目的标题、题面、标签和分类将会被直接导入，测试数据将会在后台自动导入。

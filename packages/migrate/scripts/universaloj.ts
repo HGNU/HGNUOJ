@@ -36,13 +36,9 @@ const langMap = {
     Python3: 'py.py3',
 };
 function handleMailLower(mail: string) {
-    let data = mail.trim().toLowerCase();
-    if (data.endsWith('@googlemail.com')) data = data.replace('@googlemail.com', '@gmail.com');
-    if (data.endsWith('@gmail.com')) {
-        const [prev] = data.split('@');
-        data = `${prev.replace(/[.+]/g, '')}@gmail.com`;
-    }
-    return data;
+    const [n, d] = mail.trim().toLowerCase().split('@');
+    const [name] = n.split('+');
+    return `${name.replace(/\./g, '')}@${d === 'googlemail.com' ? 'gmail.com' : d}`;
 }
 
 export async function run({
@@ -313,7 +309,7 @@ export async function run({
     for (const tdoc of tdocs) {
         const [permissions, problems, notices] = await Promise.all([
             query(`SELECT * FROM \`contests_permissions\` WHERE \`contest_id\` = ${tdoc.id}`),
-            query(`SELECT * FROM \`contests_problems\` WHERE \`contest_id\` = ${tdoc.id} ORDER BY \`problem_rank\` ASC`),
+            query(`SELECT * FROM \`contests_problems\` WHERE \`contest_id\` = ${tdoc.id} ORDER BY \`problem_id\` ASC`),
             // query(`SELECT * FROM \`contests_asks\` WHERE \`contest_id\` = ${tdoc.id}`),
             query(`SELECT * FROM \`contests_notice\` WHERE \`contest_id\` = ${tdoc.id}`),
         ]);
@@ -323,7 +319,7 @@ export async function run({
         }
         const pids = problems.map((p) => pidMap[p.problem_id]);
         const maintainer = permissions.map((p) => uidMap[p.username]).slice(1);
-        const info = JSON.parse(tdoc.extra_config) || {};
+        const info = JSON.parse(tdoc.extra_config || '{}');
         const startAt = moment(tdoc.start_time);
         const endAt = startAt.clone().add(tdoc.last_min, 'minutes');
         const tid = await ContestModel.add(

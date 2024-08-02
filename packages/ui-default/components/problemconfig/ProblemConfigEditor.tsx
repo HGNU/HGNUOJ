@@ -87,8 +87,8 @@ export function configYamlFormat(config: ProblemConfigFile) {
 export default connect(mapStateToProps, mapDispatchToProps)(class MonacoEditor extends React.PureComponent<Props> {
   disposable = [];
   containerElement: HTMLElement;
-  private __preventUpdate = false;
-  private __preventFormat = false;
+  __preventUpdate = false;
+  __preventFormat = false;
 
   editor: editor.IStandaloneCodeEditor;
   model: editor.ITextModel;
@@ -143,7 +143,7 @@ export default connect(mapStateToProps, mapDispatchToProps)(class MonacoEditor e
   }
 
   componentWillUnmount() {
-    if (this.vjEditor) this.vjEditor.destory();
+    if (this.vjEditor) this.vjEditor.destroy();
     if (this.model) this.model.dispose();
     if (this.editor) this.editor.dispose();
     this.disposable.map((i) => i.dispose());

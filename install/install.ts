@@ -24,7 +24,7 @@ const sleep = (t: number) => new Promise((r) => { setTimeout(r, t); });
 const locales = {
     zh: {
         'install.start': '开始运行 Hydro 安装工具',
-        'warn.avx2': '检测到您的 CPU 不支持 avx2 指令集，将使用 mongodb@v4.4',
+        'warn.avx': '检测到您的 CPU 不支持 avx 指令集，将使用 mongodb@v4.4',
         'error.rootRequired': '请先使用 sudo su 切换到 root 用户后再运行该工具。',
         'error.unsupportedArch': '不支持的架构 %s ,请尝试手动安装。',
         'error.osreleaseNotFound': '无法获取系统版本信息（/etc/os-release 文件未找到），请尝试手动安装。',
@@ -51,7 +51,7 @@ const locales = {
     },
     en: {
         'install.start': 'Starting Hydro installation tool',
-        'warn.avx2': 'Your CPU does not support avx2, will use mongodb@v4.4',
+        'warn.avx': 'Your CPU does not support avx, will use mongodb@v4.4',
         'error.rootRequired': 'Please run this tool as root user.',
         'error.unsupportedArch': 'Unsupported architecture %s, please try to install manually.',
         'error.osreleaseNotFound': 'Unable to get system version information (/etc/os-release file not found), please try to install manually.',
@@ -111,11 +111,11 @@ for (const line of lines) {
     if (d[1].startsWith('"')) values[d[0].toLowerCase()] = d[1].substring(1, d[1].length - 2);
     else values[d[0].toLowerCase()] = d[1];
 }
-let avx2 = true;
+let avx = true;
 const cpuInfoFile = readFileSync('/proc/cpuinfo', 'utf-8');
-if (!cpuInfoFile.includes('avx2') && !installAsJudge) {
-    avx2 = false;
-    log.warn('warn.avx2');
+if (!cpuInfoFile.includes('avx') && !installAsJudge) {
+    avx = false;
+    log.warn('warn.avx');
 }
 let retry = 0;
 log.info('install.start');
@@ -164,6 +164,7 @@ const Caddyfile = `\
 # 请注意在防火墙/安全组中放行端口，且部分运营商会拦截未经备案的域名。
 # For more information, refer to caddy v2 documentation.
 :80 {
+  encode zstd gzip
   log {
     output file /data/access.log {
       roll_size 1gb
@@ -321,7 +322,8 @@ ${nixConfBase}`);
                 exec('nix-channel --add https://nixos.org/channels/nixpkgs-unstable nixpkgs', { stdio: 'inherit' });
                 exec('nix-channel --update', { stdio: 'inherit' });
             },
-            'nix-env -iA nixpkgs.pm2 nixpkgs.yarn nixpkgs.esbuild nixpkgs.bash nixpkgs.unzip nixpkgs.zip nixpkgs.diffutils',
+            'nix-env -iA nixpkgs.pm2 nixpkgs.yarn nixpkgs.esbuild nixpkgs.bash nixpkgs.unzip nixpkgs.zip nixpkgs.diffutils nixpkgs.patch',
+            'yarn config set disable-self-update-check true',
             async () => {
                 const rl = createInterface(process.stdin, process.stdout);
                 try {
@@ -335,7 +337,7 @@ ${nixConfBase}`);
                     if (!docker) return;
                     const containers = exec('docker ps -a --format json').output?.split('\n')
                         .map((i) => i.trim()).filter((i) => i).map((i) => JSON.parse(i));
-                    const uoj = containers?.find((i) => i.Image.toLowerCase === 'universaloj/uoj-system' && i.State === 'running');
+                    const uoj = containers?.find((i) => i.Image.toLowerCase() === 'universaloj/uoj-system' && i.State === 'running');
                     if (uoj) {
                         log.info('migrate.uojFound');
                         const res = await rl.question('>');
@@ -366,22 +368,26 @@ ${nixConfBase}`);
         "openssl-1.1.1u"
         "openssl-1.1.1v"
         "openssl-1.1.1w"
+        "openssl-1.1.1x"
+        "openssl-1.1.1y"
+        "openssl-1.1.1z"
     ];
 }`),
-            `nix-env -iA hydro.mongodb${avx2 ? 5 : 4}${CN ? '-cn' : ''} nixpkgs.mongosh nixpkgs.mongodb-tools`,
+            `nix-env -iA hydro.mongodb${avx ? 6 : 4}${CN ? '-cn' : ''} nixpkgs.mongosh nixpkgs.mongodb-tools`,
         ],
     },
     {
         init: 'install.compiler',
         operations: [
-            'nix-env -iA nixpkgs.gcc nixpkgs.fpc nixpkgs.python3',
+            'nix-env -iA nixpkgs.gcc nixpkgs.python3',
         ],
     },
     {
         init: 'install.sandbox',
         skip: () => !exec('hydro-sandbox --help').code,
         operations: [
-            'nix-env -iA hydro.sandbox',
+            'nix-env -iA nixpkgs.go-judge',
+            'ln -sf $(which go-judge) /usr/local/bin/hydro-sandbox',
         ],
     },
     {
@@ -527,11 +533,12 @@ ${nixConfBase}`);
             () => {
                 const containers = exec('docker ps -a --format json').output?.split('\n')
                     .map((i) => i.trim()).filter((i) => i).map((i) => JSON.parse(i));
-                const uoj = containers!.find((i) => i.Image.toLowerCase === 'universaloj/uoj-system' && i.State === 'running')!;
-                const info = JSON.parse(exec(`docker inspect ${uoj.Id}`).output!);
+                const uoj = containers!.find((i) => i.Image.toLowerCase() === 'universaloj/uoj-system' && i.State === 'running')!;
+                const id = uoj.Id || uoj.ID;
+                const info = JSON.parse(exec(`docker inspect ${id}`).output!);
                 const dir = info[0].GraphDriver.Data.MergedDir;
                 exec(`sed s/127.0.0.1/0.0.0.0/g -i ${dir}/etc/mysql/mysql.conf.d/mysqld.cnf`);
-                exec(`docker exec -i ${uoj.Id} /etc/init.d/mysql restart`);
+                exec(`docker exec -i ${id} /etc/init.d/mysql restart`);
                 const passwd = readFileSync(`${dir}/etc/mysql/debian.cnf`, 'utf-8')
                     .split('\n').find((i) => i.startsWith('password'))?.split('=')[1].trim();
                 const script = [
@@ -540,7 +547,7 @@ ${nixConfBase}`);
                     'FLUSH PRIVILEGES;',
                     '',
                 ].join('\n');
-                exec(`docker exec -i ${uoj.Id} mysql -u debian-sys-maint -p${passwd} -e "${script}"`);
+                exec(`docker exec -i ${id} mysql -u debian-sys-maint -p${passwd} -e "${script}"`);
                 const config = {
                     host: info[0].NetworkSettings.IPAddress,
                     port: 3306,
@@ -552,7 +559,7 @@ ${nixConfBase}`);
                 };
                 console.log(config);
                 // TODO mail config
-                exec(`hydrooj cli script migrateUoj '${JSON.stringify(config)}'`, { stdio: 'inherit' });
+                exec(`hydrooj cli script migrateUniversaloj '${JSON.stringify(config)}'`, { stdio: 'inherit' });
             },
         ],
     },
@@ -608,7 +615,9 @@ async function main() {
                     let res = exec(op[0], { stdio: 'inherit' });
                     while (res.code && op[1].ignore !== true) {
                         if (op[1].retry && retry < 30) {
-                            log.warn('Retry... (%s)', op[0]);
+                            log.warn('Retry in 3 secs... (%s)', op[0]);
+                            // eslint-disable-next-line no-await-in-loop
+                            await sleep(3000);
                             res = exec(op[0], { stdio: 'inherit' });
                             retry++;
                         } else log.fatal('Error when running %s', op[0]);
@@ -618,7 +627,9 @@ async function main() {
                     let res = await op[0](op[1]);
                     while (res === 'retry') {
                         if (retry < 30) {
-                            log.warn('Retry...');
+                            log.warn('Retry in 3 secs...');
+                            // eslint-disable-next-line no-await-in-loop
+                            await sleep(3000);
                             // eslint-disable-next-line no-await-in-loop
                             res = await op[0](op[1]);
                             retry++;

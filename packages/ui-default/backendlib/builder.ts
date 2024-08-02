@@ -17,13 +17,8 @@ declare module 'hydrooj' {
     'ui-default.nav_logo_dark': string;
   }
   interface UiContextBase {
-    nav_logo_dark?: string;
     constantVersion?: string;
   }
-}
-
-function updateLogo() {
-  UiContextBase.nav_logo_dark = SystemModel.get('ui-default.nav_logo_dark');
 }
 
 const vfs: Record<string, string> = {};
@@ -47,9 +42,11 @@ const federationPlugin: esbuild.Plugin = {
 
 const build = async (contents: string) => {
   const res = await esbuild.build({
+    tsconfigRaw: '{"compilerOptions":{"experimentalDecorators":true}}',
     format: 'iife' as 'iife',
     bundle: true,
     outdir: tmp,
+    sourcemap: SystemModel.get('ui-default.nosourcemap') ? false : 'external',
     splitting: false,
     write: false,
     target: ['chrome65'],
@@ -107,11 +104,11 @@ export async function buildUI() {
   }
   const entry = await build([
     `window.lazyloadMetadata = ${JSON.stringify(hashes)};`,
+    `window.LANGS=${JSON.stringify(SettingModel.langs)};`,
     ...entryPoints.map((i) => `import '${relative(tmp, i).replace(/\\/g, '\\\\')}';`),
   ].join('\n'));
-  const pages = entry.outputFiles.map((i) => i.text);
-  const str = `window.LANGS=${JSON.stringify(SettingModel.langs)};${pages.join('\n')}`;
-  addFile('entry.js', str);
+  const pages = entry.outputFiles.filter((i) => i.path.endsWith('.js')).map((i) => i.text);
+  addFile('entry.js', `window._hydroLoad=()=>{ ${pages.join('\n')} };`);
   UiContextBase.constantVersion = hashes['entry.js'];
   for (const key in vfs) {
     if (newFiles.includes(key)) continue;
@@ -139,13 +136,11 @@ export async function apply(ctx: Context) {
   ctx.Route('constant', '/constant/:version', UiConstantsHandler);
   ctx.Route('constant', '/lazy/:version/:name', UiConstantsHandler);
   ctx.Route('constant', '/resource/:version/:name', UiConstantsHandler);
-  ctx.on('app/started', updateLogo);
   ctx.on('app/started', buildUI);
   const debouncedBuildUI = debounce(buildUI, 2000, { trailing: true });
   const triggerHotUpdate = (path?: string) => {
-    if (path && !path.includes('/ui-default/') && !path.includes('/public/')) return;
+    if (path && !path.includes('/ui-default/') && !path.includes('/public/') && !path.includes('/frontend/')) return;
     debouncedBuildUI();
-    updateLogo();
   };
   ctx.on('system/setting', () => triggerHotUpdate());
   ctx.on('app/watch/change', triggerHotUpdate);

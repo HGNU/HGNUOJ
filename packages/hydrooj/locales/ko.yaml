@@ -456,8 +456,8 @@ Numeric PID: 문제 번호
 Oh, the user doesn't have any contributions!: 아직 기여가 없습니다.
 Oh, the user hasn't created any discussions yet!: 아직 토론을 시작하지 않았습니다.
 Oh, the user hasn't submitted yet!: 아직 제출하지 않았습니다 _(:зゝ∠)
-Oh, there is no task in the queue!: 대기열이 비었습니다.
 Oh, there are no tasks that match the filter!: 결과 없음
+Oh, there is no task in the queue!: 대기열이 비었습니다.
 Ok: OK
 Only A-Z, a-z, 0-9 and _ are accepted: A-Z, a-z, 0-9 와 _만 허용됨
 Oops, there are no results.: 결과 없음
@@ -544,9 +544,9 @@ Quit Scratchpad: Editor 닫기
 Quote: 문구
 Rank: 순위
 ranking: 순위
+Read all record codes: 모든 기록 코드 읽기
 Read data of own problems: 자신의 문제 데이터 읽기
 Read data of problem: 문제 데이터 읽기
-Read record codes: 점수 읽기
 Ready (☆▽☆): 준비 완료! (☆▽☆)
 Ready: 준비됨
 Recent {0} Records: 최근 {0} 점수
@@ -792,6 +792,7 @@ What's domain?: 그룹이 무엇인가요?
 What's script?: 스크립트가 무엇인가요?
 What's this?: 이것이 무엇인가요?
 Whether to show tags in the problem list.: 태그를 문제 목록에서 보일지 결정.
+wiki_about: 소개
 wiki_help: Wiki Help
 Will be used as the domain icon.: 그룹 아이콘으로 쓰일 것입니다.
 With this feature, you can copy problems that you can view from a domain to some other domain. Their title, content, tags and categories will be copied. However, their test data are not copied directly.: 이 기능을 사용하면 그룹에서 볼 수있는 문제를 다른 그룹으로 복사 할 수 있습니다. 제목, 콘텐츠, 태그 및 카테고리가 복사됩니다. 그러나 테스트 데이터는 직접 복사되지 않습니다.

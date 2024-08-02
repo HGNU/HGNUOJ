@@ -1,6 +1,7 @@
 import { escapeRegExp, pick, uniq } from 'lodash';
 import { LRUCache } from 'lru-cache';
 import { Collection, Filter, ObjectId } from 'mongodb';
+import { serializer } from '@hydrooj/framework';
 import { LoginError, UserAlreadyExistError, UserNotFoundError } from '../error';
 import {
     Authenticator, FileInfo, GDoc,
@@ -8,7 +9,6 @@ import {
 } from '../interface';
 import avatar from '../lib/avatar';
 import pwhash from '../lib/hash.hydro';
-import serializer from '../lib/serializer';
 import * as bus from '../service/bus';
 import db from '../service/db';
 import { Value } from '../typeutils';
@@ -153,10 +153,10 @@ export class User {
         return false;
     }
 
-    checkPassword(password: string) {
+    async checkPassword(password: string) {
         const h = global.Hydro.module.hash[this.hashType];
         if (!h) throw new Error('Unknown hash method');
-        const result = h(password, this._salt, this);
+        const result = await h(password, this._salt, this);
         if (result !== true && result !== this._hash) {
             throw new LoginError(this.uname);
         }
@@ -177,24 +177,24 @@ export class User {
         return user;
     }
 
-    serialize(options) {
+    serialize(_, h) {
         if (!this._isPrivate) {
             const fields = ['_id', 'uname', 'mail', 'perm', 'role', 'priv', 'regat', 'loginat', 'tfa', 'authn'];
-            if (options.showDisplayName) fields.push('displayName');
+            if (h?.user?.hasPerm(PERM.PERM_VIEW_DISPLAYNAME)) fields.push('displayName');
             return pick(this, fields);
         }
-        return JSON.stringify(this, serializer({ showDisplayName: options.showDisplayName }, true));
+        return JSON.stringify(this, serializer(true, h));
     }
 }
 
-function handleMailLower(mail: string) {
-    let data = mail.trim().toLowerCase();
-    if (data.endsWith('@googlemail.com')) data = data.replace('@googlemail.com', '@gmail.com');
-    if (data.endsWith('@gmail.com')) {
-        const [prev] = data.split('@');
-        data = `${prev.replace(/[.+]/g, '')}@gmail.com`;
-    }
-    return data;
+declare module '@hydrooj/framework' {
+    interface UserModel extends User { }
+}
+
+export function handleMailLower(mail: string) {
+    const [n, d] = mail.trim().toLowerCase().split('@');
+    const [name] = n.split('+');
+    return `${name.replace(/\./g, '')}@${d === 'googlemail.com' ? 'gmail.com' : d}`;
 }
 
 async function initAndCache(udoc: Udoc, dudoc, studoc, scope: bigint = PERM.PERM_ALL) {
@@ -324,7 +324,7 @@ class UserModel {
         const salt = String.random();
         const res = await coll.findOneAndUpdate(
             { _id: uid },
-            { $set: { salt, hash: pwhash(password, salt), hashType: 'hydro' } },
+            { $set: { salt, hash: await pwhash(password, salt), hashType: 'hydro' } },
             { returnDocument: 'after' },
         );
         deleteUserCache(res.value);
@@ -346,36 +346,46 @@ class UserModel {
         mail: string, uname: string, password: string,
         uid?: number, regip: string = '127.0.0.1', priv: number = system.get('default.priv'),
     ) {
-        const salt = String.random();
+        let autoAlloc = false;
         if (typeof uid !== 'number') {
             const [udoc] = await coll.find({}).sort({ _id: -1 }).limit(1).toArray();
             uid = Math.max((udoc?._id || 0) + 1, 2);
+            autoAlloc = true;
         }
-        try {
-            await coll.insertOne({
-                _id: uid,
-                mail,
-                mailLower: handleMailLower(mail),
-                uname,
-                unameLower: uname.trim().toLowerCase(),
-                hash: pwhash(password.toString(), salt),
-                salt,
-                hashType: 'hydro',
-                regat: new Date(),
-                ip: [regip],
-                loginat: new Date(),
-                loginip: regip,
-                priv,
-                avatar: `gravatar:${mail}`,
-            });
-        } catch (e) {
-            if (e?.code === 11000) {
-                // Duplicate Key Error
-                throw new UserAlreadyExistError(Object.values(e?.keyValue || {}));
+        const salt = String.random();
+        while (true) { // eslint-disable-line no-constant-condition
+            try {
+                // eslint-disable-next-line no-await-in-loop
+                await coll.insertOne({
+                    _id: uid,
+                    mail,
+                    mailLower: handleMailLower(mail),
+                    uname,
+                    unameLower: uname.trim().toLowerCase(),
+                    // eslint-disable-next-line no-await-in-loop
+                    hash: await pwhash(password.toString(), salt),
+                    salt,
+                    hashType: 'hydro',
+                    regat: new Date(),
+                    ip: [regip],
+                    loginat: new Date(),
+                    loginip: regip,
+                    priv,
+                    avatar: `gravatar:${mail}`,
+                });
+                return uid;
+            } catch (e) {
+                if (e?.code === 11000) {
+                    // Duplicate Key Error
+                    if (autoAlloc && JSON.stringify(e.keyPattern) === '{"_id":1}') {
+                        uid++;
+                        continue;
+                    }
+                    throw new UserAlreadyExistError(Object.values(e?.keyValue || {}));
+                }
+                throw e;
             }
-            throw e;
         }
-        return uid;
     }
 
     @ArgMethod
@@ -408,11 +418,11 @@ class UserModel {
         return projection ? coll.find(params).project<Udoc>(buildProjection(projection)) : coll.find(params);
     }
 
-    static async getListForRender(domainId: string, uids: number[]) {
+    static async getListForRender(domainId: string, uids: number[], showDisplayName = true) {
         const [udocs, vudocs, dudocs, studocs] = await Promise.all([
             UserModel.getMulti({ _id: { $in: uids } }, ['_id', 'uname', 'mail', 'avatar', 'school', 'studentId']).toArray(),
             collV.find({ _id: { $in: uids } }).toArray(),
-            domain.getDomainUserMulti(domainId, uids).project({ uid: true, displayName: true }).toArray(),
+            domain.getDomainUserMulti(domainId, uids).project({ uid: 1, ...(showDisplayName ? { displayName: 1 } : {}) }).toArray(),
             collStu.find({ _id: { $in: uids } }).toArray(),
         ]);
         const studict = {};
@@ -426,7 +436,7 @@ class UserModel {
         const udict = {};
         for (const udoc of udocs) udict[udoc._id] = udoc;
         for (const udoc of vudocs) udict[udoc._id] = udoc;
-        for (const dudoc of dudocs) udict[dudoc.uid].displayName = dudoc.displayName;
+        if (showDisplayName) for (const dudoc of dudocs) udict[dudoc.uid].displayName = dudoc.displayName;
         for (const uid of uids) udict[uid] ||= { ...UserModel.defaultUser };
         for (const key in udict) {
             udict[key].school ||= '';

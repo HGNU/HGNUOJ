@@ -110,7 +110,7 @@ export class HomeHandler extends Handler {
 
     async getRanking(domainId: string, limit = 50) {
         if (!this.user.hasPerm(PERM.PERM_VIEW_RANKING)) return [];
-        const dudocs = await domain.getMultiUserInDomain(domainId, { uid: { $gt: 1 } })
+        const dudocs = await domain.getMultiUserInDomain(domainId, { uid: { $gt: 1 }, rp: { $gt: 0 } })
             .sort({ rp: -1 }).project({ uid: 1 }).limit(limit).toArray();
         const uids = dudocs.map((dudoc) => dudoc.uid);
         this.collectUser(uids);
@@ -146,7 +146,7 @@ export class HomeHandler extends Handler {
     }
 
     async get({ domainId }) {
-        const homepageConfig = this.domain.homepage || system.get('hydrooj.homepage');
+        const homepageConfig = this.ctx.setting.get('hydrooj.homepage');
         const info = yaml.load(homepageConfig) as any;
         const contents = [];
         for (const column of info) {
@@ -216,8 +216,8 @@ class HomeSecurityHandler extends Handler {
         if (this.session.sudoUid) {
             const udoc = await user.getById(domainId, this.session.sudoUid);
             if (!udoc) throw new UserNotFoundError(this.session.sudoUid);
-            udoc.checkPassword(current);
-        } else this.user.checkPassword(current);
+            await udoc.checkPassword(current);
+        } else await this.user.checkPassword(current);
         await user.setPassword(this.user._id, password);
         await token.delByUid(this.user._id);
         this.response.redirect = this.url('user_login');
@@ -232,8 +232,8 @@ class HomeSecurityHandler extends Handler {
         if (this.session.sudoUid) {
             const udoc = await user.getById(domainId, this.session.sudoUid);
             if (!udoc) throw new UserNotFoundError(this.session.sudoUid);
-            udoc.checkPassword(current);
-        } else this.user.checkPassword(current);
+            await udoc.checkPassword(current);
+        } else await this.user.checkPassword(current);
         const udoc = await user.getByEmail(domainId, email);
         if (udoc) throw new UserAlreadyExistError(email);
         await this.limitRate('send_mail', 3600, 30);
@@ -423,7 +423,7 @@ class HomeAvatarHandler extends Handler {
         } else if (this.request.files.file) {
             const file = this.request.files.file;
             if (file.size > 8 * 1024 * 1024) throw new ValidationError('file');
-            const ext = path.extname(file.originalFilename);
+            const ext = path.extname(file.originalFilename).toLowerCase();
             if (!['.jpg', '.jpeg', '.png'].includes(ext)) throw new ValidationError('file');
             await storage.put(`user/${this.user._id}/.avatar${ext}`, file.filepath, this.user._id);
             // TODO: cached avatar
@@ -512,10 +512,14 @@ class HomeDomainCreateHandler extends Handler {
         if (doc) throw new DomainAlreadyExistsError(id);
         avatar ||= this.user.avatar || `gravatar:${this.user.mail}`;
         const domainId = await domain.add(id, this.user._id, name, bulletin);
+        // When this domain is deleted but previously added to user's list we shouldn't push it again
+        const push = !this.user.pinnedDomains?.includes(domainId);
         await Promise.all([
             domain.edit(domainId, { avatar }),
             domain.setUserRole(domainId, this.user._id, 'root'),
-            user.setById(this.user._id, undefined, undefined, { pinnedDomains: domainId }),
+            push
+                ? user.setById(this.user._id, undefined, undefined, { pinnedDomains: domainId })
+                : Promise.resolve(),
         ]);
         this.response.redirect = this.url('domain_dashboard', { domainId });
         this.response.body = { domainId };
@@ -589,7 +593,7 @@ class HomeMessagesConnectionHandler extends ConnectionHandler {
 }
 
 export async function apply(ctx: Context) {
-    ctx.using(['geoip'], (g) => {
+    ctx.inject(['geoip'], (g) => {
         geoip = g.geoip;
     });
     ctx.Route('homepage', '/', HomeHandler);
@@ -599,6 +603,6 @@ export async function apply(ctx: Context) {
     ctx.Route('home_avatar', '/home/avatar', HomeAvatarHandler, PRIV.PRIV_USER_PROFILE);
     ctx.Route('home_domain', '/home/domain', HomeDomainHandler, PRIV.PRIV_USER_PROFILE);
     ctx.Route('home_domain_create', '/home/domain/create', HomeDomainCreateHandler, PRIV.PRIV_CREATE_DOMAIN);
-    if (system.get('server.message')) ctx.Route('home_messages', '/home/messages', HomeMessagesHandler, PRIV.PRIV_USER_PROFILE);
+    ctx.Route('home_messages', '/home/messages', HomeMessagesHandler, PRIV.PRIV_USER_PROFILE);
     ctx.Connection('home_messages_conn', '/home/messages-conn', HomeMessagesConnectionHandler, PRIV.PRIV_USER_PROFILE);
 }

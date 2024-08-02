@@ -10,13 +10,6 @@ class WikiHelpHandler extends Handler {
   noCheckPermView = true;
 
   async get() {
-    const LANGS = SettingModel.langs;
-    const languages = {};
-    for (const key in LANGS) {
-      if (LANGS[key].hidden) continue;
-      languages[`${LANGS[key].display}(${key})`] = LANGS[key].compile || LANGS[key].execute;
-    }
-    this.response.body = { languages };
     this.response.template = 'wiki_help.html';
   }
 }
@@ -137,6 +130,12 @@ class RichMediaHandler extends Handler {
 }
 
 export function apply(ctx: Context) {
+  ctx.inject(['setting'], (c) => {
+    c.setting.PreferenceSetting(
+      SettingModel.Setting('setting_display', 'skipAnimate', false, 'boolean', 'Skip Animation'),
+      SettingModel.Setting('setting_display', 'showTimeAgo', true, 'boolean', 'Enable Time Ago'),
+    );
+  });
   if (process.env.HYDRO_CLI) return;
   ctx.Route('wiki_help', '/wiki/help', WikiHelpHandler);
   ctx.Route('wiki_about', '/wiki/about', WikiAboutHandler);
@@ -145,7 +144,6 @@ export function apply(ctx: Context) {
   ctx.Route('markdown', '/markdown', MarkdownHandler);
   ctx.Route('config_schema', '/manage/config/schema.json', SystemConfigSchemaHandler, PRIV.PRIV_EDIT_SYSTEM);
   ctx.Route('media', '/media', RichMediaHandler);
-  ctx.plugin(require('./backendlib/builder'));
   ctx.on('handler/after/DiscussionRaw', async (that) => {
     if (that.args.render && that.response.type === 'text/markdown') {
       that.response.type = 'text/html';
@@ -164,4 +162,6 @@ export function apply(ctx: Context) {
       domains: SystemModel.get('ui-default.domains') || [],
     };
   });
+  ctx.plugin(require('./backendlib/template'));
+  ctx.plugin(require('./backendlib/builder'));
 }

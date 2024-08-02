@@ -2,7 +2,7 @@
 /* eslint-disable consistent-return */
 /* eslint-disable import/no-dynamic-require */
 /* eslint-disable @typescript-eslint/no-shadow */
-import { relative, resolve } from 'path';
+import { relative, resolve, sep } from 'path';
 import { FSWatcher, watch } from 'chokidar';
 import { debounce } from 'lodash';
 import { Context, MainScope, Service } from '../context';
@@ -38,10 +38,9 @@ export default class Watcher extends Service {
     private declined: Set<string>;
     private stashed = new Set<string>();
 
-    constructor(public ctx: Context, private config: any) {
+    constructor(public ctx: Context) {
         super(ctx, 'watcher', true);
         this.externals = new Set(Object.keys(require.cache));
-        Context.service('watcher');
     }
 
     start() {
@@ -59,6 +58,7 @@ export default class Watcher extends Service {
         const triggerLocalReload = debounce(() => this.triggerLocalReload(), 1000);
 
         this.watcher.on('change', (path) => {
+            if (path.includes(`${sep}.`)) return;
             logger.debug('change detected:', relative(this.root, path));
             this.ctx.emit('app/watch/change', path);
 

@@ -216,19 +216,19 @@ export default class CodeforcesProvider extends BasicFetcher implements IBasicPr
             difficulty: getDifficulty(tag),
             content: buildContent([
                 {
-                    type: 'Text', sectionTitle: 'Description', subType: 'markdown', text: description,
+                    type: 'Text', sectionTitle: 'Description', subType: 'markdown', text: description.replace(/tex-span/g, 'katex'),
                 },
                 ...input ? [{
-                    type: 'Text', sectionTitle: 'Input', subType: 'markdown', text: input,
+                    type: 'Text', sectionTitle: 'Input', subType: 'markdown', text: input.replace(/tex-span/g, 'katex'),
                 }] : [],
                 ...output ? [{
-                    type: 'Text', sectionTitle: 'Output', subType: 'markdown', text: output,
+                    type: 'Text', sectionTitle: 'Output', subType: 'markdown', text: output.replace(/tex-span/g, 'katex'),
                 }] : [],
                 ...inputs.length ? [{
                     type: 'Plain', text: [...inputs, ...outputs].join('\n'),
                 }] : [] as any,
                 ...note ? [{
-                    type: 'Text', sectionTitle: 'Note', subType: 'markdown', text: note,
+                    type: 'Text', sectionTitle: 'Note', subType: 'markdown', text: note.replace(/tex-span/g, 'katex'),
                 }] : [],
             ]),
         };
@@ -270,15 +270,23 @@ export default class CodeforcesProvider extends BasicFetcher implements IBasicPr
         });
     }
 
+    async readLatestSubmission(contestId = '') {
+        const { document } = await this.html(contestId ? `/gym/${contestId}/my` : '/problemset/status?my=on');
+        this.csrf = document.querySelector('meta[name="X-Csrf-Token"]').getAttribute('content');
+        const submission = document.querySelector('[data-submission-id]').getAttribute('data-submission-id');
+        return submission;
+    }
+
     async submitProblem(id: string, lang: string, code: string, info, next, end) {
         const programTypeId = lang.includes('codeforces.') ? lang.split('codeforces.')[1] : '54';
         const [type, contestId, problemId] = parseProblemId(id);
         const endpoint = type === 'GYM'
             ? `/gym/${contestId}/submit`
             : `/problemset/submit/${contestId}/${problemId}`;
+        const latestSubmission = await this.readLatestSubmission(type === 'GYM' ? contestId : '');
         const [csrf, ftaa, bfaa] = await this.getCsrfToken(endpoint);
         // TODO check submit time to ensure submission
-        const { text: submit } = await this.post(`${endpoint}?csrf_token=${csrf}`).send({
+        const { text: submit, redirects } = await this.post(`${endpoint}?csrf_token=${csrf}`).send({
             csrf_token: csrf,
             action: 'submitSolutionFormSubmitted',
             programTypeId,
@@ -295,19 +303,22 @@ export default class CodeforcesProvider extends BasicFetcher implements IBasicPr
         const message = Array.from(statusDocument.querySelectorAll('.error'))
             .map((i) => i.textContent).join('').replace(/&nbsp;/g, ' ').trim();
         if (message) {
-            end({ status: STATUS.STATUS_COMPILE_ERROR, message });
+            end({ status: STATUS.STATUS_SYSTEM_ERROR, message });
             return null;
         }
-        const { document } = await this.html(type !== 'GYM'
-            ? '/problemset/status?my=on'
-            : `/gym/${contestId}/my`);
-        this.csrf = document.querySelector('meta[name="X-Csrf-Token"]').getAttribute('content');
-        const submission = document.querySelector('[data-submission-id]').getAttribute('data-submission-id');
+        const submission = await this.readLatestSubmission(type === 'GYM' ? contestId : '');
+        if (submission === latestSubmission || redirects.length === 0 || !redirects.toString().includes('my')) {
+            // Submit failed so the request is not redirected
+            // eslint-disable-next-line max-len
+            end({ status: STATUS.STATUS_SYSTEM_ERROR, message: 'Submit failed. Check service status or use better network to avoid rejection by server protection.' });
+            return null;
+        }
         return type !== 'GYM' ? submission : `${contestId}#${submission}`;
     }
 
     async waitForSubmission(id: string, next, end) {
         let i = 1;
+        const start = Date.now();
         // eslint-disable-next-line no-constant-condition
         while (true) {
             await sleep(3000);
@@ -319,13 +330,14 @@ export default class CodeforcesProvider extends BasicFetcher implements IBasicPr
                     submissionId: contestId ? id.split('#')[1] : id,
                 });
             if (body.compilationError === 'true') {
-                return await end({
+                await end({
                     compilerText: body['checkerStdoutAndStderr#1'],
                     status: STATUS.STATUS_COMPILE_ERROR,
                     score: 0,
                     time: 0,
                     memory: 0,
                 });
+                break;
             }
             const time = Math.sum(Object.keys(body).filter((k) => k.startsWith('timeConsumed#')).map((k) => +body[k]));
             const memory = Math.max(...Object.keys(body).filter((k) => k.startsWith('memoryConsumed#')).map((k) => +body[k])) / 1024;
@@ -344,12 +356,16 @@ export default class CodeforcesProvider extends BasicFetcher implements IBasicPr
             if (cases.length) await next({ status: STATUS.STATUS_JUDGING, cases });
             if (body.waiting === 'true') continue;
             const status = VERDICT[Object.keys(VERDICT).find((k) => normalize(body.verdict).includes(k))];
-            return await end({
+            await end({
                 status,
                 score: status === STATUS.STATUS_ACCEPTED ? 100 : 0,
                 time,
                 memory,
             });
+            break;
         }
+        // TODO better rate limiting
+        // Codeforces only allow 20 submission per 5 minute
+        if (Date.now() - start < 16000) await sleep(Date.now() - start);
     }
 }
