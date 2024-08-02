@@ -7,6 +7,9 @@ import {
 import * as supertest from 'supertest';
 
 const Root = {
+    stuname: '测试',
+    stuid: '2020310120000',
+    stuclass: '计算机2001',
     username: 'root',
     password: '123456',
     creditionals: null,
@@ -43,7 +46,7 @@ describe('App', () => {
             .expect(302)
             .then((res) => res.headers.location);
         await agent.post(redirect)
-            .send({ uname: Root.username, password: Root.password, verifyPassword: Root.password })
+            .send({ stuname: Root.stuname, stuid: Root.stuid, stuclass: Root.stuclass, uname: Root.username, password: Root.password, verifyPassword: Root.password })
             .expect(302);
     });
 
