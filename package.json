@@ -65,5 +65,10 @@
         "reggol": "1.6.3",
         "cordis/reggol": "1.6.3",
         "cordis/@cordisjs/logger": "0.3.2"
+    },
+    "dependencies": {
+        "@codingame/monaco-languageclient": "^0.17.4",
+        "@hydrooj/geoip": "workspace:packages/geoip",
+        "@hydrooj/language-server": "github:hydro-dev/language-server"
     }
 }
