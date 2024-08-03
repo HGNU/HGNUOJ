@@ -202,8 +202,8 @@ bus.on('student/cacheClassList', (content: string) => cache.set('classList', JSO
 bus.on('student/cacheActivity', (cls: string, content: string) => cache.set(`activity/${cls}`, JSON.parse(content)));
 bus.on('student/invalidateClassListCache', () => cache.delete('classList'));
 bus.on('student/invalidateActivityCache', () => {
-    for (const key of [...cache.keys()].filter((key) => /^activity\//.test(key))) {
-        cache.delete(key);
+    for (const cacheKey of [...cache.keys()].filter((key) => /^activity\//.test(key))) {
+        cache.delete(cacheKey);
     }
 });
 

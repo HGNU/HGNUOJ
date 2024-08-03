@@ -287,12 +287,12 @@ class UserModel {
         // HGNUOJ
         const stuinfo = ['stuid', 'name', 'class'];
         const studoc = {};
-        stuinfo.forEach((element) => {
+        for (const element of stuinfo) {
             if (op.$set[element]) {
                 studoc[element] = op.$set[element];
                 delete op.$set[element];
             }
-        });
+        };
         if (!(await StudentModel.getStuInfoById(uid))) await StudentModel.create(uid);
         if (studoc['stuid']) {
             const stu = await StudentModel.getStuInfoByStuId(studoc['stuid']);
