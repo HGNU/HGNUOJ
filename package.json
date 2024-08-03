@@ -60,5 +60,10 @@
         "supertest": "^7.0.0",
         "typescript": "5.3.3",
         "wtfnode": "^0.9.3"
+    },
+    "resolutions": {
+        "reggol": "1.6.3",
+        "cordis/reggol": "1.6.3",
+        "cordis/@cordisjs/logger": "0.3.2"
     }
 }
