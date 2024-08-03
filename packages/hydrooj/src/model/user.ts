@@ -292,7 +292,7 @@ class UserModel {
                 studoc[element] = op.$set[element];
                 delete op.$set[element];
             }
-        };
+        }
         if (!(await StudentModel.getStuInfoById(uid))) await StudentModel.create(uid);
         if (studoc['stuid']) {
             const stu = await StudentModel.getStuInfoByStuId(studoc['stuid']);
