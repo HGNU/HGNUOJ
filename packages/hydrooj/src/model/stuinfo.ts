@@ -159,7 +159,9 @@ class StudentModel {
             return { ...clsInfoList[0], ...cls, activity };
         })).toArray();
         const clsList: any[] = await Promise.all(clsCursor);
-        clsList.forEach((cls) => { cls.rpAvg ||= 1500; });
+        for (const cls of clsList) {
+            cls.rpAvg ||= 1500;
+        }
         const sortWeights = {
             rpAvg: 2,
             stuNum: 10,
@@ -173,13 +175,19 @@ class StudentModel {
         const activityList = clsList.map((cls: { activity: number }) => cls.activity / 1e5);
         const activityMax = Math.max(...activityList);
         const activityMin = Math.min(...activityList);
-        clsList.forEach((cls) => { cls.activity = normalize(cls.activity / 1e5, activityMin - 1000, activityMax + 1000, 0, 1000); });
+        for (const cls of clsList) {
+            cls.activity = normalize(cls.activity / 1e5, activityMin - 1000, activityMax + 1000, 0, 1000);
+        }
 
-        clsList.forEach((cls) => { cls.weight = calSortWeight(cls); });
+        for (const cls of clsList) {
+            cls.weight = calSortWeight(cls);
+        }
         const weightList = clsList.map((cls: { weight: number }) => cls.weight);
         const weightMax = Math.max(...weightList);
         const weightMin = Math.min(...weightList);
-        clsList.forEach((cls) => { cls.weight = normalize(cls.weight, weightMin - 1000, weightMax + 1000, 0, 1000); });
+        for (const cls of clsList) {
+            cls.weight = normalize(cls.weight, weightMin - 1000, weightMax + 1000, 0, 1000);
+        }
 
         clsList.sort((a, b) => b.weight - a.weight);
 
@@ -193,7 +201,11 @@ class StudentModel {
 bus.on('student/cacheClassList', (content: string) => cache.set('classList', JSON.parse(content)));
 bus.on('student/cacheActivity', (cls: string, content: string) => cache.set(`activity/${cls}`, JSON.parse(content)));
 bus.on('student/invalidateClassListCache', () => cache.delete('classList'));
-bus.on('student/invalidateActivityCache', () => [...cache.keys()].filter((key) => /^activity\//.test(key)).forEach((key) => cache.delete(key)));
+bus.on('student/invalidateActivityCache', () => {
+    for (const key of [...cache.keys()].filter((key) => /^activity\//.test(key))) {
+        cache.delete(key);
+    }
+});
 
 bus.on('app/started', () => db.ensureIndexes(
     coll,

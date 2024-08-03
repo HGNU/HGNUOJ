@@ -1,9 +1,9 @@
 extends:
-  - ./base.yaml
-  - airbnb/hooks
+- ./base.yaml
+- airbnb/hooks
 plugins:
-  - react
-  - jsx-a11y
+- react
+- jsx-a11y
 rules:
   react-hooks/exhaustive-deps: 0
   react/prefer-stateless-function: 0
