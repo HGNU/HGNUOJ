@@ -285,20 +285,22 @@ class UserModel {
         if ($push && Object.keys($push).length) op.$push = $push;
         if (op.$set?.loginip) op.$addToSet = { ip: op.$set.loginip };
         // HGNUOJ
-        const stuinfo = ['stuid', 'name', 'class'];
-        const studoc = {};
-        for (const element of stuinfo) {
-            if (op.$set[element]) {
-                studoc[element] = op.$set[element];
-                delete op.$set[element];
+        if ($set && Object.keys($set).length) {
+            const stuinfo = ['stuid', 'name', 'class'];
+            const studoc = {};
+            for (const element of stuinfo) {
+                if (op.$set[element]) {
+                    studoc[element] = op.$set[element];
+                    delete op.$set[element];
+                }
             }
+            if (!(await StudentModel.getStuInfoById(uid))) await StudentModel.create(uid);
+            if (studoc['stuid']) {
+                const stu = await StudentModel.getStuInfoByStuId(studoc['stuid']);
+                if (stu && stu._id !== uid) throw new UserAlreadyExistError(studoc['stuid']);
+            }
+            StudentModel.setById(uid, studoc);
         }
-        if (!(await StudentModel.getStuInfoById(uid))) await StudentModel.create(uid);
-        if (studoc['stuid']) {
-            const stu = await StudentModel.getStuInfoByStuId(studoc['stuid']);
-            if (stu && stu._id !== uid) throw new UserAlreadyExistError(studoc['stuid']);
-        }
-        StudentModel.setById(uid, studoc);
         const keys = new Set(Object.values(op).flatMap((i) => Object.keys(i)));
         if (keys.has('mailLower') || keys.has('unameLower')) {
             const udoc = await coll.findOne({ _id: uid });
