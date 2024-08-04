@@ -6,6 +6,8 @@ dist/
 /build/*.js
 .cache/
 *.log
+*.log.gz
+*.js.map
 *.js.map
 *.tsbuildinfo
 *.hydro
@@ -57,6 +59,7 @@ __*
 !__mocks__
 !.gitkeep
 *.local
+ceshi.sh
 
 # Monokle
 .monokle
