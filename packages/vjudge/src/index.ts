@@ -75,11 +75,6 @@ class AccountService {
 
     async sync(domainId: string, resync = false, list: string) {
         let page = 1;
-        if (domainId !== 'codeforces') {
-            const oj = await coll.findOne({ type: domainId });
-            page = oj.page;
-            resync = false;
-        }
         let pids = await this.api.listProblem(page, resync, list);
         while (pids.length) {
             logger.info(`${domainId}: Syncing page ${page}`);
@@ -113,10 +108,6 @@ class AccountService {
             }
             page++;
             pids = await this.api.listProblem(page, resync, list);
-        }
-        page--;
-        if (domainId !== 'codeforces') {
-            coll.updateMany({ type: domainId }, { $set: { page } });
         }
     }
 
