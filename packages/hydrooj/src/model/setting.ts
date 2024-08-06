@@ -260,6 +260,7 @@ SystemSetting(
     Setting('setting_server', 'server.cors', '', 'text', 'server.cors', 'CORS domains'),
     Setting('setting_server', 'server.language', 'zh_CN', langRange, 'server.language', 'Default display language'),
     Setting('setting_server', 'server.login', true, 'boolean', 'server.login', 'Allow builtin-login', FLAG_PRO),
+    Setting('setting_server', 'server.message', false, 'boolean', 'server.message', 'Allow users send messages'),
     Setting('setting_server', 'server.checkUpdate', true, 'boolean', 'server.checkUpdate', 'Daily update check'),
     Setting('setting_server', 'server.ignoreUA', ignoreUA, 'textarea', 'server.ignoreUA', 'ignoredUA'),
     ServerLangSettingNode,
