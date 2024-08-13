@@ -18,8 +18,8 @@
       <span>{{ udoc.name }}</span>
     </a>
   {% else %}
-    <a class="user-profile-name" href="{{ url('user_detail', uid=udoc._id) }}">
-      {% if handler.user.hasPerm(perm.PREM_VIEW_DISPLAYNAME) and udoc.displayName and udoc.displayName != udoc.uname %}
+    <a class="user-profile-name uname--lv{{ udoc.level|default(0) }}" href="{{ url('user_detail', uid=udoc._id) }}">
+      {% if handler.user.hasPerm(perm.PERM_VIEW_DISPLAYNAME) and udoc.displayName and udoc.displayName != udoc.uname %}
         {{ udoc.displayName }} ({{ udoc.uname }})
       {% else %}
         {{ udoc.uname }}
