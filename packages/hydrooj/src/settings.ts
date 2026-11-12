@@ -115,9 +115,10 @@ export class SettingService extends Service {
                     if (node.type === 'boolean') parsed = !!value && !['off', '0', 'false'].includes(value);
                 } catch (e) { }
                 if (parsed === undefined) return;
-                await this.ctx.db.collection('system').updateOne({ _id: `${path.join('.')}__migrated` }, { $set: { value: true } }, { upsert: true });
-                this.ctx.logger.info('Migrating %s: %o', path.join('.'), parsed);
                 await this.saveConfig(this.applyDelta(this.systemConfig, path.join('.'), parsed));
+                await this.ctx.db.collection('system').updateOne({ _id: `${path.join('.')}__migrated` }, { $set: { value: true } }, { upsert: true });
+                this.initialValues[`${path.join('.')}__migrated`] = true;
+                this.ctx.logger.info('Migrated %s', path.join('.'));
             }
         };
         await processNode([], schema);

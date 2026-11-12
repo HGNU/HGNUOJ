@@ -5,7 +5,7 @@ import { STATUS } from '@hydrooj/common';
 import { getConfig, overrideConfig } from '../packages/hydrojudge/src/config';
 import { runFlow } from '../packages/hydrojudge/src/flow';
 import { RULES } from '../packages/hydrooj/src/model/contest';
-import StudentModel, { validateStudentInfo } from '../packages/hydrooj/src/model/stuinfo';
+import StudentModel, { deleteStudentCache, validateStudentInfo } from '../packages/hydrooj/src/model/stuinfo';
 import UserModel, { deleteUserCache } from '../packages/hydrooj/src/model/user';
 import db from '../packages/hydrooj/src/service/db';
 import { SettingService } from '../packages/hydrooj/src/settings';
@@ -113,9 +113,14 @@ export async function run() {
             applyDelta: (source, key, value) => { migrated.push(`${key}=${value}`); return source; },
             saveConfig: async () => {},
         };
-        await SettingService.prototype._actualMigrate.call(service, Schema.object({ server: Schema.object({ port: Schema.number() }) }));
+        const schema = Schema.object({ server: Schema.object({ port: Schema.number() }) });
+        await SettingService.prototype._actualMigrate.call(service, schema);
+        await SettingService.prototype._actualMigrate.call(service, schema);
         assert.deepEqual(migrated, ['server.port=8889']);
-        results.push('legacy settings migrate using complete key names');
+        const failed: any = { ...service, initialValues: { 'server.port': 8889 }, saveConfig: async () => { throw new Error('save failed'); } };
+        await assert.rejects(SettingService.prototype._actualMigrate.call(failed, schema), /save failed/);
+        assert.equal(failed.initialValues['server.port__migrated'], undefined);
+        results.push('legacy settings migration is idempotent and retries failed saves');
     } finally {
         // Include accounts created before an assertion fails, scoped to this random run.
         const created = await UserModel.coll.find({ uname: { $regex: `^${prefix}` } }).toArray();
@@ -123,7 +128,7 @@ export async function run() {
         await db.collection('stu.info').deleteMany({ _id: { $in: [...uids] } });
         await db.collection('domain.user').deleteMany({ uid: { $in: [...uids] } });
         await UserModel.coll.deleteMany({ _id: { $in: [...uids] }, uname: { $regex: `^${prefix}` } });
-        (await import('../packages/hydrooj/src/model/stuinfo')).deleteStudentCache();
+        deleteStudentCache();
     }
     return { passed: results, fixturesRemoved: true };
 }
