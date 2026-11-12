@@ -27,7 +27,7 @@ import student from '../model/stuinfo';
 import system from '../model/system';
 import token from '../model/token';
 import user, { deleteUserCache } from '../model/user';
-import * as bus from '../service/bus';
+import bus from '../service/bus';
 import {
     Handler, param, post, Query, Types,
 } from '../service/server';

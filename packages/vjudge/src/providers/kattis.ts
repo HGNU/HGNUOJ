@@ -3,7 +3,7 @@ import { PassThrough } from 'stream';
 import { JSDOM } from 'jsdom';
 import * as superagent from 'superagent';
 import proxy from 'superagent-proxy';
-import { Logger, STATUS } from 'hydrooj';
+import { Logger, randomstring, STATUS } from 'hydrooj';
 import { IBasicProvider, RemoteAccount } from '../interface';
 
 proxy(superagent as any);
@@ -39,8 +39,9 @@ export default class KATTISProvider implements IBasicProvider {
     async getCsrfToken(url: string) {
         const { header } = await this.get(url);
         if (header['set-cookie']) {
-            await this.save({ cookie: header['set-cookie'] });
-            this.cookie = header['set-cookie'];
+            const cookies = [header['set-cookie']].flat();
+            await this.save({ cookie: cookies });
+            this.cookie = cookies;
         }
         return '';
     }
@@ -90,7 +91,7 @@ export default class KATTISProvider implements IBasicProvider {
             }
             const file = new PassThrough();
             this.get(src).pipe(file);
-            const fid = String.random(8);
+            const fid = randomstring(8);
             images[src] = fid;
             files[`${fid}.png`] = file;
             ele.setAttribute('src', `file://${fid}.png`);
@@ -155,8 +156,8 @@ export default class KATTISProvider implements IBasicProvider {
         };
     }
 
-    async listProblem(page: number, resync = false) {
-        if (resync && page > 1) return [];
+    async listProblem(page: number, resyncFrom = 0) {
+        if (resyncFrom && page > resyncFrom) return [];
         const res = await this.get(`/problems?page=${page - 1}&language=en`);
         const { window: { document } } = new JSDOM(res.text);
         return [...document.querySelector('tbody').children].map((i) => `P${i.children[0].children[0].getAttribute('href').split('/problems/')[1]}`);

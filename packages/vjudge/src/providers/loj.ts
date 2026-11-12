@@ -3,8 +3,7 @@ import { PassThrough } from 'stream';
 import { filter } from 'lodash';
 import * as superagent from 'superagent';
 import proxy from 'superagent-proxy';
-import { STATUS } from '@hydrooj/utils/lib/status';
-import { Logger } from 'hydrooj/src/logger';
+import { Logger, randomstring, STATUS } from 'hydrooj';
 import { IBasicProvider, RemoteAccount } from '../interface';
 
 proxy(superagent as any);
@@ -36,8 +35,9 @@ export default class LOJProvider implements IBasicProvider {
     async getCsrfToken(url: string) {
         const { header } = await this.get(url);
         if (header['set-cookie']) {
-            await this.save({ cookie: header['set-cookie'] });
-            this.cookie = header['set-cookie'];
+            const cookies = [header['set-cookie']].flat();
+            await this.save({ cookie: cookies });
+            this.cookie = cookies;
         }
         return '';
     }
@@ -105,7 +105,7 @@ ${result.body.samples[section.sampleId].outputData}
                 }
                 const file = new PassThrough();
                 this.get(src).pipe(file);
-                const fid = String.random(8);
+                const fid = randomstring(8);
                 images[src] = fid;
                 files[`${fid}.png`] = file;
                 content = content.replace(src, `file://${fid}.png`);
@@ -141,7 +141,7 @@ ${result.body.samples[section.sampleId].outputData}
     }
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    async listProblem(page: number, resync = false) {
+    async listProblem(page: number, resyncFrom = 0) {
         return [];
         // const skipCount = 0;
         // const results = await this.post('/api/problem/queryProblemSet')
