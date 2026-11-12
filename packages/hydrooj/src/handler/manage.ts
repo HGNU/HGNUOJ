@@ -340,7 +340,9 @@ class SystemStudentImportHandler extends SystemHandler {
                 if (seenMail.has(mailKey) || await user.getByEmail('system', email)) throw new ValidationError('email', '', 'Already exists');
                 if (seenName.has(nameKey) || await user.getByUname('system', username)) throw new ValidationError('username', '', 'Already exists');
                 if (seenId.has(stuid) || await StudentModel.getStuInfoByStuId(stuid)) throw new ValidationError('stuid', '', 'Already exists');
-                seenMail.add(mailKey); seenName.add(nameKey); seenId.add(stuid);
+                seenMail.add(mailKey);
+                seenName.add(nameKey);
+                seenId.add(stuid);
                 udocs.push({ email, username, password, realname, classname, stuid });
             } catch (e) {
                 messages.push(`Line ${i + 1}: ${e.message} ${e.params || ''}`);

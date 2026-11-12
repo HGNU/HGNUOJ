@@ -2,8 +2,9 @@ import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import Schema from 'schemastery';
 import { STATUS } from '@hydrooj/common';
-import { getConfig, overrideConfig } from '../packages/hydrojudge/src/config';
+import { getConfig, JudgeSettings, overrideConfig } from '../packages/hydrojudge/src/config';
 import { runFlow } from '../packages/hydrojudge/src/flow';
+import { apply as applyBuiltinJudge } from '../packages/hydrojudge/src/index';
 import { RULES } from '../packages/hydrooj/src/model/contest';
 import StudentModel, { deleteStudentCache, validateStudentInfo } from '../packages/hydrooj/src/model/stuinfo';
 import UserModel, { deleteUserCache } from '../packages/hydrooj/src/model/user';
@@ -25,6 +26,9 @@ export async function run() {
         return uid;
     };
     try {
+        assert.equal(process.env.HYDRO_CLI, 'true');
+        assert.equal(applyBuiltinJudge({} as any, JudgeSettings({})), undefined);
+        results.push('CLI maintenance commands do not start judge consumers');
         assert.throws(() => validateStudentInfo({ stuid: '220260001junk' }));
         assert.throws(() => validateStudentInfo({ stuid: 'prefix2020310120000' }));
         validateStudentInfo({ stuid: '29999998' });

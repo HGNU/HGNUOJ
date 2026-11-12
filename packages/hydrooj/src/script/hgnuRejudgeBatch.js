@@ -1,3 +1,4 @@
+/* eslint-disable no-await-in-loop -- Preserve ordered updates and progress checkpoints. */
 const schemastery = require('schemastery');
 const Schema = schemastery.default?.any ? schemastery.default : schemastery;
 const RecordModel = require('../model/record').default;
@@ -17,7 +18,7 @@ async function run(arg = {}, report = console.log) {
         { $group: { _id: '$pid' } },
         { $sort: { _id: 1 } },
     ]).toArray();
-    report({ message: 'PENDING ' + total + ' waiting records across ' + pids.length + ' problems' });
+    report({ message: `PENDING ${total} waiting records across ${pids.length} problems` });
     if (!apply) return { total };
     let enqueued = 0;
     let problems = 0;
@@ -31,7 +32,7 @@ async function run(arg = {}, report = console.log) {
         enqueued += rids.length;
         problems++;
     }
-    report({ message: 'DONE enqueued=' + enqueued + ' problems=' + problems + ' remaining=' + (total - enqueued) });
+    report({ message: `DONE enqueued=${enqueued} problems=${problems} remaining=${total - enqueued}` });
     return { enqueued, remaining: total - enqueued };
 }
 

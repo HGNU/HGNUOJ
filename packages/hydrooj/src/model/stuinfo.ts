@@ -1,7 +1,7 @@
 import { pick } from 'lodash';
 import { LRUCache } from 'lru-cache';
-import { Student } from '../interface';
 import { UserAlreadyExistError, UserNotFoundError, ValidationError } from '../error';
+import { Student } from '../interface';
 import { Logger } from '../logger';
 import bus from '../service/bus';
 import db from '../service/db';
@@ -26,7 +26,7 @@ bus.on('student/delcache', (content) => deleteStudentCache(JSON.parse(content), 
 export function validateStudentInfo(info: Partial<Student>) {
     if (info.stuid !== undefined && !/^2(?:\d{7}|\d{12})$/.test(info.stuid)) throw new ValidationError('stuid');
     if (info.name !== undefined && !/^[\u4E00-\u9FA5]{2,4}$/.test(info.name)) throw new ValidationError('name');
-    if (info.class !== undefined && !/^[\u4E00-\u9FA5]{2,4}[1-2][0-9]{3}$/.test(info.class)) throw new ValidationError('class');
+    if (info.class !== undefined && !/^[\u4E00-\u9FA5]{2,4}[12][0-9]{3}$/.test(info.class)) throw new ValidationError('class');
 }
 
 class StudentModel {
@@ -147,7 +147,7 @@ class StudentModel {
         const clsCursor = await coll.aggregate([
             { $match: { class: { $not: { $in: [null, ''] } } } },
             { $group: { _id: '$class', stuNum: { $sum: 1 } } },
-        ]).map((async (cls) => {
+        ]).map(async (cls) => {
             const users: number[] = await this.getUserUidsByClassName(domain, cls._id.toString());
             const clsInfoList = await domainUsercoll.aggregate([
                 { $match: { uid: { $in: users } } },
@@ -166,8 +166,8 @@ class StudentModel {
             else {
                 activityList = await Promise.all(users.map(async (uid) => (
                     await TokenModel.getMostRecentSessionByUid(uid, ['createAt', 'updateAt']))?.updateAt?.valueOf()
-                    || (await UserModel.getById(domain, uid))?.loginat?.valueOf()
-                    || Date.now() - 7 * 24 * 60 * 60 * 1000));
+                || (await UserModel.getById(domain, uid))?.loginat?.valueOf()
+                || Date.now() - 7 * 24 * 60 * 60 * 1000));
                 activityList = activityList.map((ac) => Math.max(ac, Date.now() - 7 * 24 * 60 * 60 * 1000));
                 await bus.broadcast('student/cacheActivity', cls._id, JSON.stringify(activityList));
             }
@@ -178,7 +178,7 @@ class StudentModel {
                 };
             }
             return { ...clsInfoList[0], ...cls, activity };
-        })).toArray();
+        }).toArray();
         const clsList: any[] = await Promise.all(clsCursor);
         for (const cls of clsList) {
             cls.rpAvg ||= 1500;

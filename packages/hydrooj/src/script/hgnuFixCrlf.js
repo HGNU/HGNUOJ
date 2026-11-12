@@ -1,3 +1,4 @@
+/* eslint-disable no-await-in-loop -- Preserve ordered updates and progress checkpoints. */
 // 将测试数据中的 CRLF 规范为 LF 并覆盖 OJ 上的对应文件。
 // 复制到 /opt/HGNUOJ-Hydro/Hydro/packages/hydrooj/src/script/hgnuFixCrlf.js
 // 预览：hydrooj cli script hgnuFixCrlf '{"base":"/root/hydro_export","list":"/root/hydro_export/crlf_fix_in.json"}'
@@ -30,7 +31,7 @@ async function run(arg = {}, report = console.log) {
         const names = new Set(list[pid]);
         for (const name of list[pid]) {
             const stem = name.replace(/\.in$/, '');
-            if (fs.existsSync(path.join(td, stem + '.out'))) names.add(stem + '.out');
+            if (fs.existsSync(path.join(td, `${stem}.out`))) names.add(`${stem}.out`);
         }
         for (const name of names) {
             const p = path.join(td, name);

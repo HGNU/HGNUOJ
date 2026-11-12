@@ -1,3 +1,4 @@
+/* eslint-disable no-await-in-loop -- Preserve ordered updates and progress checkpoints. */
 // 批量提交题包 std.cpp 到学校 Hydro OJ（4.13.4 脚本格式）
 // 复制到 /opt/HGNUOJ-Hydro/Hydro/packages/hydrooj/src/script/hgnuSubmitStd.js
 //
@@ -25,11 +26,11 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 function loadItems(base, only, pidSet) {
     const root = path.resolve(base);
     const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
-    if (!Array.isArray(manifest)) throw new Error('manifest.json must be an array');
+    if (!Array.isArray(manifest)) throw new TypeError('manifest.json must be an array');
     return manifest
         .filter((x) => (!pidSet || pidSet.has(x.pid))
             && (!only || x.pid === only || String(x.title).includes(only)))
-        .map((x) => ({ ...x, stdFile: path.join(root, 'std', x.pid + '.cpp') }));
+        .map((x) => ({ ...x, stdFile: path.join(root, 'std', `${x.pid}.cpp`) }));
 }
 
 async function run(arg = {}, report = console.log) {
@@ -53,7 +54,7 @@ async function run(arg = {}, report = console.log) {
     const items = loadItems(base, only, pidSet);
     const missing = items.filter((x) => !fs.existsSync(x.stdFile));
     if (missing.length) {
-        throw new Error('缺少 std 文件: ' + missing.slice(0, 10).map((x) => x.pid).join(', '));
+        throw new Error(`缺少 std 文件: ${missing.slice(0, 10).map((x) => x.pid).join(', ')}`);
     }
 
     const coll = db.collection('record');
@@ -78,8 +79,8 @@ async function run(arg = {}, report = console.log) {
             counts[key] = (counts[key] || 0) + 1;
             if (r.status !== STATUS.STATUS_ACCEPTED) bad.push([item.pid, key, r.score]);
         }
-        report({ message: 'CHECK ' + JSON.stringify(counts) });
-        if (bad.length) report({ message: 'NOT_AC ' + JSON.stringify(bad.slice(0, 50)) });
+        report({ message: `CHECK ${JSON.stringify(counts)}` });
+        if (bad.length) report({ message: `NOT_AC ${JSON.stringify(bad.slice(0, 50))}` });
         return { checked: items.length, counts, bad: bad.length };
     }
 

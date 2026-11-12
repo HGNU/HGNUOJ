@@ -1,3 +1,4 @@
+/* eslint-disable no-await-in-loop -- Preserve ordered updates and progress checkpoints. */
 // Copy this file to hydrooj/src/script/hgnuImport413.js on the Hydro 4.13.4 server.
 // Run through: node hydrooj/bin/hydrooj.js cli script hgnuImport413 '{"base":"/root/hydro_export"}'
 // The default is read-only. Pass apply:true only after a verified backup and dry run.
@@ -18,7 +19,7 @@ function plannedNew(pid) {
 function readPackages(base, only) {
     const root = path.resolve(base);
     const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
-    if (!Array.isArray(manifest)) throw new Error('manifest.json must be an array');
+    if (!Array.isArray(manifest)) throw new TypeError('manifest.json must be an array');
     const seen = new Set();
     const selected = [];
     for (const item of manifest) {
@@ -36,7 +37,7 @@ function readPackages(base, only) {
         if (!names.includes('config.yaml')) throw new Error(`Missing config.yaml: ${item.pid}`);
         for (const name of names) {
             if (!fs.statSync(path.join(dataDir, name)).isFile()) throw new Error(`Nested testdata: ${item.pid}/${name}`);
-            if (name.endsWith('.in') && !names.includes(name.slice(0, -3) + '.out')) {
+            if (name.endsWith('.in') && !names.includes(`${name.slice(0, -3)}.out`)) {
                 throw new Error(`Missing output: ${item.pid}/${name}`);
             }
         }
@@ -135,7 +136,8 @@ async function run(arg = {}, report = console.log) {
             fs.renameSync(tempPath, progressPath);
         }
         done++;
-        report({ message: `${done}/${packages.length} ${current ? 'UPDATE' : 'NEW'} ${item.pid} docId=${docId} owner=${operator} files=${names.length}` });
+        const action = current ? 'UPDATE' : 'NEW';
+        report({ message: `${done}/${packages.length} ${action} ${item.pid} docId=${docId} owner=${operator} files=${names.length}` });
     }
     return { done };
 }

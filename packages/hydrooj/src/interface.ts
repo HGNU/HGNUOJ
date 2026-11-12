@@ -250,7 +250,8 @@ export interface RecordStatDoc {
 }
 
 export interface ScoreboardNode {
-    type: 'stu_class' | 'stu_stuid' | 'stu_name' | 'string' | 'rank' | 'user' | 'email' | 'record' | 'records' | 'problem' | 'solved' | 'time' | 'total_score';
+    type: 'stu_class' | 'stu_stuid' | 'stu_name' | 'string' | 'rank' | 'user' | 'email'
+        | 'record' | 'records' | 'problem' | 'solved' | 'time' | 'total_score';
     value: string; // 显示分数
     raw?: any;
     score?: number; // 原始分数（100，不含赛制加成）

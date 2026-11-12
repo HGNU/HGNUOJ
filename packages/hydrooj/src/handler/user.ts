@@ -320,7 +320,7 @@ class UserRegisterWithCodeHandler extends Handler {
     // 学生信息
     @param('stuname', Types.String, (s) => /^[\u4E00-\u9FA5]{2,4}$/.test(s))
     @param('stuid', Types.String, (s) => /^2(?:\d{7}|\d{12})$/.test(s))
-    @param('stuclass', Types.String, (s) => /^[\u4E00-\u9FA5]{2,4}[1-2][0-9]{3}$/.test(s))
+    @param('stuclass', Types.String, (s) => /^[\u4E00-\u9FA5]{2,4}[12][0-9]{3}$/.test(s))
     async post(
         domainId: string,
         password: string,

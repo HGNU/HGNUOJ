@@ -260,7 +260,7 @@ AccountSetting(
     Setting('setting_student', 'name', '', 'text', 'Stu_RealName',
         '', FLAG_DISABLED | FLAG_PUBLIC, (s) => /^[\u4E00-\u9FA5]{2,4}$/.test(s)),
     Setting('setting_student', 'class', null, 'text', 'Stu_ClassName',
-        '', FLAG_PUBLIC, (s) => /^[\u4E00-\u9FA5]{2,4}[1-2][0-9]{3}$/.test(s)),
+        '', FLAG_PUBLIC, (s) => /^[\u4E00-\u9FA5]{2,4}[12][0-9]{3}$/.test(s)),
     Setting('setting_info', 'avatar', '', 'text', 'Avatar',
         'Allow using gravatar:email qq:id github:name url:link format.'),
     Setting('setting_info', 'qq', null, 'text', 'QQ'),

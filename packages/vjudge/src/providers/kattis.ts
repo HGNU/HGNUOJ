@@ -1,4 +1,3 @@
-/* eslint-disable no-await-in-loop */
 import { PassThrough } from 'stream';
 import { JSDOM } from 'jsdom';
 import * as superagent from 'superagent';
@@ -83,11 +82,11 @@ export default class KATTISProvider implements IBasicProvider {
         pDocument.innerHTML = pDocument.innerHTML.replace(/<span class="tex2jax_process">\$/g, '$').replace(/\$<\/span>/g, '$');
         const images = {};
         const files = {};
-        pDocument.querySelectorAll('img[src]').forEach((ele) => {
+        for (const ele of pDocument.querySelectorAll('img[src]')) {
             const src = ele.getAttribute('src');
             if (images[src]) {
                 ele.setAttribute('src', `file://${images[src]}.png`);
-                return;
+                continue;
             }
             const file = new PassThrough();
             this.get(src).pipe(file);
@@ -95,7 +94,7 @@ export default class KATTISProvider implements IBasicProvider {
             images[src] = fid;
             files[`${fid}.png`] = file;
             ele.setAttribute('src', `file://${fid}.png`);
-        });
+        }
         let html = '';
         let lastId = 1;
         let i = 0;
@@ -127,14 +126,13 @@ export default class KATTISProvider implements IBasicProvider {
                         pre.innerHTML = `<code>${preCode.innerHTML}</code>`;
                         preCode.replaceWith(pre);
                     }
-                    html += node.outerHTML.replace(/\n\n/g, '\n').replace(/\\begin{equation\*}/g, '$').replace(/\\end{equation\*}/g, '$');
+                    html += node.outerHTML.replace(/\n\n/g, '\n').replace(/\\begin\{equation\*\}/g, '$').replace(/\\end\{equation\*\}/g, '$');
                 }
             } else {
-                // eslint-disable-next-line no-lonely-if
                 if (node.nodeName === '#text' && node.nodeValue.trim() !== '') {
                     const p = document.createElement('p');
                     p.innerHTML = '';
-                    while (['#text', 'A', 'SPAN'].indexOf(pDocument.childNodes[i].nodeName) !== -1) {
+                    while (['#text', 'A', 'SPAN'].includes(pDocument.childNodes[i].nodeName)) {
                         const tNode = pDocument.childNodes[i];
                         if (isElementNode(tNode)) p.innerHTML += tNode.outerHTML;
                         else p.innerHTML += tNode.nodeValue;
@@ -163,14 +161,11 @@ export default class KATTISProvider implements IBasicProvider {
         return [...document.querySelector('tbody').children].map((i) => `P${i.children[0].children[0].getAttribute('href').split('/problems/')[1]}`);
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    async submitProblem(id: string, lang: string, code: string, info) {
+    async submitProblem(_id: string, _lang: string, _code: string, _info) {
         return '';
     }
 
-    // eslint-disable-next-line consistent-return
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    async waitForSubmission(id: string, next, end) {
+    async waitForSubmission(_id: string, _next, end) {
         const status = STATUS.STATUS_SYSTEM_ERROR;
         const time = 0;
         const memory = 0;

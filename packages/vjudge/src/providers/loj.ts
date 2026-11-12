@@ -1,4 +1,3 @@
-/* eslint-disable no-await-in-loop */
 import { PassThrough } from 'stream';
 import { filter } from 'lodash';
 import * as superagent from 'superagent';
@@ -97,11 +96,11 @@ ${result.body.samples[section.sampleId].outputData}
                     content += `\n${section.text}\n\n`;
                 }
             }
-            [...content.matchAll(/!\[\]\(.*\)/g)].forEach((ele) => {
-                const src = ele[0].match(/http(.*)[^)]+/)[0];
+            for (const ele of content.matchAll(/!\[\]\((https?:\/\/[^)\s]+)\)/g)) {
+                const src = ele[1];
                 if (images[src]) {
                     content = content.replace(src, `file://${images[src]}.png`);
-                    return;
+                    continue;
                 }
                 const file = new PassThrough();
                 this.get(src).pipe(file);
@@ -109,7 +108,7 @@ ${result.body.samples[section.sampleId].outputData}
                 images[src] = fid;
                 files[`${fid}.png`] = file;
                 content = content.replace(src, `file://${fid}.png`);
-            });
+            }
             if (content.includes('题目详见')) {
                 const problemId = content.match(/\/[0-9]+/)[0].replace('/', 'P');
                 content = `**题目详见 [LOJ ${problemId}](${problemId})，本题关闭提交！**`;
@@ -140,8 +139,7 @@ ${result.body.samples[section.sampleId].outputData}
         };
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    async listProblem(page: number, resyncFrom = 0) {
+    async listProblem(_page: number, _resyncFrom = 0) {
         return [];
         // const skipCount = 0;
         // const results = await this.post('/api/problem/queryProblemSet')
@@ -155,14 +153,11 @@ ${result.body.samples[section.sampleId].outputData}
         // return pli;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    async submitProblem(id: string, lang: string, code: string, info) {
+    async submitProblem(_id: string, _lang: string, _code: string, _info) {
         return '';
     }
 
-    // eslint-disable-next-line consistent-return
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    async waitForSubmission(id: string, next, end) {
+    async waitForSubmission(_id: string, _next, end) {
         const status = STATUS.STATUS_SYSTEM_ERROR;
         const time = 0;
         const memory = 0;
