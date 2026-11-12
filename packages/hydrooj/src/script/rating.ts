@@ -1,17 +1,15 @@
-/* eslint-disable simple-import-sort/imports */
 /* eslint-disable no-cond-assign */
 /* eslint-disable no-await-in-loop */
 import { NumericDictionary, unionWith } from 'lodash';
 import { Filter, ObjectId } from 'mongodb';
-import { Counter } from '@hydrooj/utils';
 import Schema from 'schemastery';
+import { Counter } from '@hydrooj/utils';
 import { Tdoc, Udoc } from '../interface';
 import difficultyAlgorithm from '../lib/difficulty';
 import rating from '../lib/rating';
 import { PRIV, STATUS } from '../model/builtin';
 import * as contest from '../model/contest';
 import domain from '../model/domain';
-import record from '../model/record';
 import problem from '../model/problem';
 import UserModel from '../model/user';
 import db from '../service/db';
@@ -26,8 +24,7 @@ interface RpDef {
     base: number;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const { log, max, min } = Math;
+const { max, min } = Math;
 
 export const RpTypes: Record<string, RpDef> = {
     problem: {
@@ -35,31 +32,20 @@ export const RpTypes: Record<string, RpDef> = {
             const problems = await problem.getMulti('', { domainId: { $in: domainIds }, nAccept: { $gt: 0 }, hidden: false }).toArray();
             if (problems.length) await report({ message: `Found ${problems.length} problems in ${domainIds[0]}` });
             for (const pdoc of problems) {
-                const nPages = Math.floor(
-                    (await problem.getMultiStatus(
-                        pdoc.domainId,
-                        {
-                            docId: pdoc.docId,
-                            rid: { $ne: null },
-                            uid: { $ne: pdoc.owner },
-                        },
-                    ).count() + 99) / 100,
+                const cursor = problem.getMultiStatus(
+                    pdoc.domainId,
+                    {
+                        docId: pdoc.docId,
+                        rid: { $ne: null },
+                        score: { $gt: 0 },
+                    },
                 );
-                pdoc.difficulty ||= difficultyAlgorithm(pdoc.nSubmit, pdoc.nAccept) || 5;
-                const p = pdoc.difficulty / (Math.sqrt(Math.sqrt(pdoc.nAccept)) + 1) / 10;
-                for (let page = 1; page <= nPages; page++) {
-                    const psdocs = await problem.getMultiStatus(
-                        pdoc.domainId, { docId: pdoc.docId, rid: { $ne: null } },
-                    ).limit(100).skip((page - 1) * 100).project({ rid: 1, uid: 1 }).toArray();
-                    const rdict = await record.getList(pdoc.domainId, psdocs.map((psdoc) => psdoc.rid));
-                    for (const psdoc of psdocs) {
-                        if (rdict[psdoc.rid.toHexString()]) {
-                            const rp = rdict[psdoc.rid.toHexString()].score * p;
-                            udict[psdoc.uid] = (udict[psdoc.uid] || 0) + rp;
-                        }
-                    }
+                const difficulty = +pdoc.difficulty || difficultyAlgorithm(pdoc.nSubmit, pdoc.nAccept) || 5;
+                const p = difficulty / 100;
+                let psdoc;
+                while (psdoc = await cursor.next()) {
+                    udict[psdoc.uid] += min(psdoc.score, 100) * p;
                 }
-                udict[pdoc.owner] = (udict[pdoc.owner] || 0) + pdoc.difficulty;
             }
             for (const key in udict) udict[key] /= 10;
         },
@@ -96,7 +82,7 @@ export const RpTypes: Record<string, RpDef> = {
             for (const key in udict) udict[key] = max(1, udict[key] / 4 - 375);
         },
         hidden: false,
-        base: 2000,
+        base: 1500,
     },
     delta: {
         async run(domainIds, udict) {

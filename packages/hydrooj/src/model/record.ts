@@ -125,7 +125,7 @@ export default class RecordModel {
             input?: string,
             files?: Record<string, string>,
             hackTarget?: ObjectId,
-            type: 'judge' | 'rejudge' | 'pretest' | 'hack' | 'generate' | 'contest',
+            type: 'judge' | 'rejudge' | 'pretest' | 'hack' | 'generate',
         } = { type: 'judge' },
     ) {
         const data: RecordDoc = {
@@ -147,7 +147,11 @@ export default class RecordModel {
             rejudged: false,
         };
         let isContest = !!args.contest;
-        if (args.contest) data.contest = args.contest;
+        if (args.contest) {
+            data.contest = args.contest;
+            const ruleDoc = await collDoc.findOne({ _id: data.contest });
+            isContest = ruleDoc['rule'] !== 'homework';
+        }
         if (args.files) data.files = args.files;
         if (args.hackTarget) data.hackTarget = args.hackTarget;
         if (args.type === 'rejudge') {
@@ -159,10 +163,6 @@ export default class RecordModel {
             data.contest = RecordModel.RECORD_PRETEST;
         } else if (args.type === 'generate') {
             data.contest = RecordModel.RECORD_GENERATE;
-        }
-        if (args.type === 'contest') {
-            const ruleDoc = await collDoc.findOne({ _id: data.contest });
-            isContest = ruleDoc['rule'] !== 'homework';
         }
         const res = await RecordModel.coll.insertOne(data);
         bus.broadcast('record/change', data);

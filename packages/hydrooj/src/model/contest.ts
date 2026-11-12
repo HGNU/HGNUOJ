@@ -649,6 +649,7 @@ const homework = buildContestRule({
             { type: 'rank', value: _('Rank') },
             { type: 'stu_class', value: _('Stu_Class') },
             { type: 'user', value: _('User') },
+            { type: 'total_score', value: _('Score') },
         ];
         if (config.isExport) {
             columns.push(
@@ -696,6 +697,10 @@ const homework = buildContestRule({
                 type: 'user',
                 value: udoc.uname,
                 raw: tsdoc.uid,
+            },
+            {
+                type: 'string',
+                value: tsdoc.score || 0,
             },
         ];
         if (config.isExport) {

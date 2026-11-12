@@ -199,6 +199,7 @@ export default class HDUOJProvider extends BasicFetcher implements IBasicProvide
             const status = StatusMapping[submission.children[2].children[0].textContent.trim()]
                 || STATUS.STATUS_SYSTEM_ERROR;
             if (status === STATUS.STATUS_JUDGING) continue;
+            if (status === STATUS.STATUS_COMPILING) continue;
             if (status === STATUS.STATUS_COMPILE_ERROR) {
                 const { text: info } = await this.get(`http://acm.hdu.edu.cn/viewerror.php?rid=${id}`)
                     .buffer(true)

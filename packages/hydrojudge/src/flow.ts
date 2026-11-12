@@ -34,7 +34,7 @@ function judgeSubtask(subtask: NormalizedSubtask, sid: string, judgeCase: Task['
             const runner = judgeCase(subtask.cases[cid]);
             cases.push(ctx.queue.add(async () => {
                 const res = (ctx.errored
-                    || (subtask.type === 'min' && ctxSubtask.score === 0)
+                    || ctxSubtask.status > STATUS.STATUS_ACCEPTED || (subtask.type === 'min' && ctxSubtask.score === 0)
                     || (subtask.type === 'max' && ctxSubtask.score === subtask.score)
                     || (subtask.if || []).filter((i) => ctx.failed[i]).length)
                     ? {

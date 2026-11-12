@@ -151,7 +151,7 @@ class HomeworkEditHandler extends Handler {
             ? Math.round(
                 (tdoc.endAt.getTime() - tdoc.penaltySince.getTime()) / (Time.day / 100),
             ) / 100
-            : 1;
+            : 0;
         const beginAt = tid
             ? moment(tdoc.beginAt).tz(this.user.timeZone)
             : moment().add(1, 'day').tz(this.user.timeZone).hour(0).minute(0).millisecond(0);
