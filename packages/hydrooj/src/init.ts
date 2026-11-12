@@ -1,5 +1,5 @@
-const versionNum = +process.version.replace(/v/gim, '').split('.')[0];
-if (versionNum < 18) throw new Error('NodeJS >=18 required');
+const versionNum = +process.version.replace(/v/gi, '').split('.')[0];
+if (versionNum < 22) throw new Error('NodeJS >=22 required');
 
 console.log('Process', process.pid, 'running as', process.env.NODE_APP_INSTANCE === '0' ? 'master' : 'worker');
 if (!global.Hydro) {
@@ -8,14 +8,9 @@ if (!global.Hydro) {
             node: process.version.split('v')[1],
             hydrooj: require('hydrooj/package.json').version,
         },
-        handler: {},
-        // @ts-ignore
-        service: {},
         // @ts-ignore
         model: {},
         script: {},
-        // @ts-ignore
-        lib: {},
         module: new Proxy({} as any, {
             get(self, key) {
                 self[key] ||= {};
@@ -23,16 +18,14 @@ if (!global.Hydro) {
             },
         }),
         // @ts-ignore
-        ui: {
-            template: {},
-        },
+        ui: {},
         // @ts-ignore
         error: {},
         locales: {},
     };
-    global.addons = [];
+    global.addons = {};
 }
 global.app = new (require('./context').Context)();
 process.on('exit', () => {
-    app.stop();
+
 });

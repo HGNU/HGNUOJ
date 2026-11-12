@@ -1,7 +1,7 @@
-import { diffLines } from 'diff';
 import type { ProblemConfigFile, TestCaseConfig } from 'hydrooj/src/interface';
+import { diffLines } from 'diff';
 import $ from 'jquery';
-import yaml from 'js-yaml';
+import * as yaml from 'js-yaml';
 import { isEqual } from 'lodash';
 import type { editor } from 'monaco-editor';
 import React from 'react';
@@ -23,15 +23,15 @@ const mapDispatchToProps = (dispatch) => ({
 
 interface Props {
   config: any;
-  handleUpdateCode: Function;
+  handleUpdateCode: (val: string) => void;
 }
 
 const configKey = [
   'type', 'subType', 'target', 'score', 'time',
   'memory', 'filename', 'checker_type', 'checker', 'interactor',
-  'validator', 'user_extra_files', 'judge_extra_files', 'detail', 'outputs',
-  'redirect', 'cases', 'subtasks', 'langs', 'key',
-  'time_limit_rate', 'memory_limit_rate',
+  'manager', 'num_processes', 'multi_pass', 'validator', 'user_extra_files',
+  'judge_extra_files', 'detail', 'outputs', 'redirect', 'cases',
+  'subtasks', 'langs', 'key', 'time_limit_rate', 'memory_limit_rate',
 ];
 
 const subtasksKey = [
@@ -50,6 +50,7 @@ export function configYamlFormat(config: ProblemConfigFile) {
       if (key === 'checker'
         && (['default', 'strict'].includes(formatConfig.checker_type) || !formatConfig.checker_type)) return;
       if (key === 'interactor' && config.type !== 'interactive') return;
+      if (key === 'multi_pass' && (!Number.isInteger(config.multi_pass) || config.multi_pass <= 1 || config.multi_pass > 20)) return;
       if (key === 'subtasks') {
         formatConfig[key] = [];
         config[key].forEach((subtask) => {
@@ -97,7 +98,7 @@ export default connect(mapStateToProps, mapDispatchToProps)(class MonacoEditor e
   async componentDidMount() {
     const { monaco } = await load(['yaml']);
     const uri = monaco.Uri.parse('hydro://problem/file/config.yaml');
-    this.model = monaco.editor.createModel(yaml.dump(configYamlFormat(this.props.config), { noArrayIndent: true }), 'yaml', uri);
+    this.model = monaco.editor.createModel(yaml.dump(configYamlFormat(this.props.config), { seqNoIndent: true }), 'yaml', uri);
     this.vjEditor = Editor.getOrConstruct($(this.containerElement), {
       language: 'yaml',
       model: this.model,
@@ -113,7 +114,7 @@ export default connect(mapStateToProps, mapDispatchToProps)(class MonacoEditor e
 
   componentDidUpdate(prevProps) {
     if (this.__preventUpdate || !this.model || !this.props.config.__valid) return;
-    if (yaml.dump(prevProps.config, { noArrayIndent: true }) === yaml.dump(this.props.config, { noArrayIndent: true })) return;
+    if (yaml.dump(prevProps.config, { seqNoIndent: true }) === yaml.dump(this.props.config, { seqNoIndent: true })) return;
     const curValue = this.model.getValue();
     const pending = configYamlFormat(this.props.config);
     try {
@@ -121,7 +122,7 @@ export default connect(mapStateToProps, mapDispatchToProps)(class MonacoEditor e
       if (isEqual(curConfig, pending)) return;
     } catch { }
     this.__preventFormat = true;
-    const diff = diffLines(curValue, yaml.dump(pending, { noArrayIndent: true }));
+    const diff = diffLines(curValue, yaml.dump(pending, { seqNoIndent: true }));
     const ops = [];
     let cursor = 1;
     for (const line of diff) {

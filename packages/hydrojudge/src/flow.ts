@@ -1,16 +1,16 @@
 import Queue from 'p-queue';
-import { STATUS } from '@hydrooj/utils/lib/status';
-import type { JudgeResultBody } from 'hydrooj';
+import {
+    JudgeResultBody, NormalizedCase, NormalizedSubtask, STATUS,
+} from '@hydrooj/common';
 import { getConfig } from './config';
 import { FormatError } from './error';
 import { Context, ContextSubTask } from './judge/interface';
-import { NormalizedCase, NormalizedSubtask } from './utils';
 
 interface Task {
     compile: () => Promise<void>;
     judgeCase: (c: NormalizedCase) => (
-        (ctx: Context, ctxSubtask: ContextSubTask, runner?: Function) => Promise<JudgeResultBody['case']>
-    )
+        (ctx: Context, ctxSubtask: ContextSubTask) => Promise<JudgeResultBody['case']>
+    );
 }
 
 const Score = {
@@ -34,7 +34,7 @@ function judgeSubtask(subtask: NormalizedSubtask, sid: string, judgeCase: Task['
             const runner = judgeCase(subtask.cases[cid]);
             cases.push(ctx.queue.add(async () => {
                 const res = (ctx.errored
-                    || ctxSubtask.status > STATUS.STATUS_ACCEPTED || (subtask.type === 'min' && ctxSubtask.score === 0)
+                    || (subtask.type === 'min' && ctxSubtask.score === 0)
                     || (subtask.type === 'max' && ctxSubtask.score === subtask.score)
                     || (subtask.if || []).filter((i) => ctx.failed[i]).length)
                     ? {
@@ -45,7 +45,12 @@ function judgeSubtask(subtask: NormalizedSubtask, sid: string, judgeCase: Task['
                         time: 0,
                         memory: 0,
                         message: '',
-                    } : await runner(ctx, ctxSubtask, runner);
+                    } : await (async () => {
+                        using span = ctx.startChildSpan('judge.case', { id: subtask.cases[cid].id, subtaskId: subtask.id });
+                        const r = await runner(ctx, ctxSubtask);
+                        span.setAttributes({ status: r?.status, time: r?.time, memory: r?.memory });
+                        return r;
+                    })();
                 if (res?.status !== STATUS.STATUS_CANCELED) {
                     ctxSubtask.score = Score[ctxSubtask.subtask.type](ctxSubtask.score, res.score);
                     ctxSubtask.status = Math.max(ctxSubtask.status, res.status);
@@ -53,7 +58,9 @@ function judgeSubtask(subtask: NormalizedSubtask, sid: string, judgeCase: Task['
                     ctx.total_time += res.time;
                     ctx.total_memory = Math.max(ctx.total_memory, res.memory);
                 }
-                ctx.next({ ...res ? { case: res } : {}, addProgress: 100 / ctx.config.count });
+                if (ctx.config.detail !== 'none') {
+                    ctx.next({ ...res ? { case: res } : {}, addProgress: 100 / ctx.config.count });
+                }
             }));
         }
         try {
@@ -91,7 +98,7 @@ export const runFlow = async (ctx: Context, task: Task) => {
             score: subtask.type === 'min' ? subtask.score : 0,
         };
         const runner = task.judgeCase(subtask.cases.find((i) => i.input.endsWith(ctx.meta.hackRejudge)));
-        const res = await runner(ctx, ctxSubtask, runner);
+        const res = await runner(ctx, ctxSubtask);
         if (res) ctx.next({ case: res });
         if (res?.status !== STATUS.STATUS_ACCEPTED) {
             const totalScore = Math.sum(ctx.config.subtasks.map((i) => i.score));
@@ -129,6 +136,4 @@ export const runFlow = async (ctx: Context, task: Task) => {
             subtasks: infos,
         });
     }
-    ctx.stat.done = new Date();
-    if (process.env.DEV) ctx.next({ message: JSON.stringify(ctx.stat) });
 };

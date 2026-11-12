@@ -1,28 +1,30 @@
 import child from 'child_process';
 import os from 'os';
 import path from 'path';
-import AdmZip from 'adm-zip';
+import { BlobReader, ZipReader } from '@zip.js/zip.js';
 import { CAC } from 'cac';
 import fs from 'fs-extra';
 import superagent from 'superagent';
 import tar from 'tar';
 import { extractZip, Logger } from '@hydrooj/utils';
+import { version } from 'hydrooj/package.json';
+import { hydroPath } from '../options';
 
 const logger = new Logger('install');
 let yarnVersion = 0;
 try {
-    // eslint-disable-next-line no-unsafe-optional-chaining
     yarnVersion = +child.execSync('yarn --version', { cwd: os.tmpdir() }).toString().split('v').pop()!.split('.')[0];
 } catch (e) {
     // yarn 2 does not support global dir
 }
 
-const hydroPath = path.resolve(os.homedir(), '.hydro');
 const addonDir = path.join(hydroPath, 'addons');
+const userAgent = `Hydro/${version} Node.js/${process.version.split('v').pop()}`;
 
 function downloadAndExtractTgz(url: string, dest: string) {
     return new Promise((resolve, reject) => {
         superagent.get(url)
+            .set('User-Agent', userAgent)
             .pipe(tar.x({
                 C: dest,
                 strip: 1,
@@ -32,8 +34,14 @@ function downloadAndExtractTgz(url: string, dest: string) {
     });
 }
 async function downloadAndExtractZip(url: string, dest: string) {
-    const res = await superagent.get(url).responseType('arraybuffer');
-    await extractZip(new AdmZip(res.body), dest, true, true);
+    let res;
+    try {
+        res = await superagent.get(url).set('User-Agent', userAgent).responseType('arraybuffer');
+    } catch (e) {
+        logger.error('Failed to download', url, e.message);
+        return;
+    }
+    await extractZip(new ZipReader(new BlobReader(new Blob([res.body]))), dest, { strip: true, overwrite: true });
 }
 const types = {
     '.tgz': downloadAndExtractTgz,
@@ -55,27 +63,22 @@ export function register(cli: CAC) {
             try {
                 src = child.execSync(`yarn info ${src} dist.tarball`, { cwd: os.tmpdir() })
                     .toString().trim().split('\n')[1];
+                if (!src.startsWith('http')) throw new Error();
             } catch (e) {
                 throw new Error('Cannot fetch package info.');
             }
         }
-        if (src.startsWith('@hydrooj/')) {
-            src = child.execSync(`npm info ${src} dist.tarball`, { cwd: os.tmpdir() }).toString().trim();
-            if (!src.startsWith('http')) throw new Error('Cannot fetch package info.');
-        }
-        if (src.startsWith('http')) {
-            const url = new URL(src);
-            const filename = url.pathname.split('/').pop()!;
-            if (Object.keys(types).find((i) => filename.endsWith(i))) {
-                const name = filename.replace(/(-?(\d+\.\d+\.\d+|latest))?(\.tar\.gz|\.zip|\.tgz)$/g, '');
-                newAddonPath = path.join(addonDir, name);
-                logger.info(`Downloading ${src} to ${newAddonPath}`);
-                fs.ensureDirSync(newAddonPath);
-                fs.emptyDirSync(newAddonPath);
-                const func = types[Object.keys(types).find((i) => filename.endsWith(i))]!;
-                await func(src, newAddonPath);
-            } else throw new Error('Unsupported file type');
-        } else throw new Error(`Unsupported install source: ${src}`);
+        const url = new URL(src);
+        const filename = url.pathname.split('/').pop()!;
+        if (Object.keys(types).find((i) => filename.endsWith(i))) {
+            const name = filename.replace(/(-?(\d+\.\d+\.\d+|latest))?(\.tar\.gz|\.zip|\.tgz)$/g, '');
+            newAddonPath = path.join(addonDir, name);
+            logger.info(`Downloading ${src} to ${newAddonPath}`);
+            fs.ensureDirSync(newAddonPath);
+            fs.emptyDirSync(newAddonPath);
+            const func = types[Object.keys(types).find((i) => filename.endsWith(i))]!;
+            await func(src, newAddonPath);
+        } else throw new Error('Unsupported file type');
         if (!newAddonPath) throw new Error('Addon download failed');
         logger.info('Installing depedencies');
         if (!fs.existsSync(path.join(newAddonPath, 'package.json'))) throw new Error('Invalid plugin file');
@@ -85,6 +88,8 @@ export function register(cli: CAC) {
             src: _src,
             lastUpdate: Date.now(),
         }));
+        logger.success(`Successfully installed ${_src}.`);
+        logger.info('Please restart Hydro to apply changes.');
     });
     cli.command('uninstall [package]').action(async (name) => {
         if (!name) {

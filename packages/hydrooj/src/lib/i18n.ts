@@ -2,27 +2,41 @@ import { Context, Service } from '../context';
 
 const translations: Record<string, Record<string, string>[]> = {};
 
-declare module '../context' {
+declare module 'cordis' {
     interface Context {
         i18n: I18nService;
     }
 }
-declare global {
-    interface String {
-        translate: (...languages: string[]) => string;
+declare module '../service/bus' {
+    interface EventMap {
+        'app/i18n/update': (lang: string) => void;
     }
 }
 
-class I18nService extends Service {
+export class I18nService extends Service {
     constructor(ctx: Context) {
-        super(ctx, 'i18n', true);
+        super(ctx, 'i18n');
+        this.translate = this.translate.bind(this);
+        this.load('ja', { __flag: '🇯🇵', __id: 'ja', __langname: '日本語' });
+    }
+
+    langs(interfaceOnly = false) {
+        const langs: Record<string, string> = {};
+        for (const lang in translations) {
+            if (interfaceOnly && !translations[lang].find((i) => i.__interface)) continue;
+            langs[lang] = this.get('__langname', lang);
+        }
+        return langs;
     }
 
     load(lang: string, content: Record<string, string>) {
-        translations[lang] ||= [];
-        translations[lang].unshift(content);
-        this[Context.current]?.on('dispose', () => {
-            translations[lang] = translations[lang].filter((i) => i !== content);
+        this.ctx.effect(() => {
+            translations[lang] ||= [];
+            translations[lang].unshift(content);
+            this.ctx.emit('app/i18n/update', lang);
+            return () => {
+                translations[lang] = translations[lang].filter((i) => i !== content);
+            };
         });
     }
 
@@ -38,33 +52,17 @@ class I18nService extends Service {
         if (languages[0]?.startsWith('en')) {
             // For most use cases, source text equals to translated text in English.
             // So if it doesn't exist, we should use the original text instead of fallback.
-            return app.i18n.get(str, languages[0]) || app.i18n.get(str, 'en') || this.toString();
+            return this.get(str, languages[0]) || this.get(str, 'en') || str.toString();
         }
-        for (const language of languages.filter(Boolean)) {
-            const curr = app.i18n.get(str, language) || app.i18n.get(str, language.split('_')[0])
-                || app.i18n.get(str, language.split('-')[0]);
+        for (const language of languages.filter(Boolean).map((i) => i.replace(/-/g, '_'))) {
+            const curr = this.get(str, language) || this.get(str, language.split('_')[0]);
             if (curr) return curr;
         }
-        return this.toString();
+        return str.toString();
     }
 }
 
-app.provide('i18n', undefined, true);
-app.i18n = new I18nService(app);
-
-String.prototype.translate = function translate(...languages: string[]) {
-    if (languages[0]?.startsWith('en')) {
-        // For most use cases, source text equals to translated text in English.
-        // So if it doesn't exist, we should use the original text instead of fallback.
-        return app.i18n.get(this, languages[0]) || app.i18n.get(this, 'en') || this.toString();
-    }
-    for (const language of languages.filter(Boolean)) {
-        const curr = app.i18n.get(this, language) || app.i18n.get(this, language.split('_')[0])
-            || app.i18n.get(this, language.split('-')[0]);
-        if (curr) return curr;
-    }
-    return this.toString();
-};
+export const name = 'i18n';
 
 function collect(lang: string) {
     const s = translations[lang];

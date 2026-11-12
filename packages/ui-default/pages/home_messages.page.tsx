@@ -5,15 +5,20 @@ import VjNotification from 'vj/components/notification';
 import selectUser from 'vj/components/selectUser';
 import { ctx, Service } from 'vj/context';
 import { NamedPage } from 'vj/misc/Page';
-import { api, gql, loadReactRedux } from 'vj/utils';
+import { api, loadReactRedux } from 'vj/utils';
 
 class MessagePadService extends Service {
-  constructor(public store, public WebSocket: typeof import('../components/socket').default) {
-    super(ctx, 'messagepad', true);
+  WebSocket: typeof import('../components/socket').default;
+  store: any;
+
+  constructor(c, s) {
+    super(c, 'messagepad');
+    this.WebSocket = s.WebSocket;
+    this.store = s.store;
   }
 }
 
-declare module '../context' {
+declare module 'cordis' {
   interface Context {
     messagepad: MessagePadService;
   }
@@ -43,25 +48,34 @@ const page = new NamedPage('home_messages', () => {
 
     reduxStore = store;
     (window as any).store = reduxStore;
-    ctx.provide('messagepad');
-    ctx.messagepad = new MessagePadService(store, WebSocket);
+    ctx.plugin(MessagePadService, { store, WebSocket });
 
-    const sock = new WebSocket(`${UiContext.ws_prefix}home/messages-conn`);
+    const sock = new WebSocket(`${UiContext.ws_prefix}websocket`);
+    sock.onopen = () => {
+      sock.send(JSON.stringify({
+        operation: 'subscribe',
+        request_id: Math.random().toString(16).substring(2),
+        credential: document.cookie.split('sid=')[1].split(';')[0],
+        channels: ['message'],
+      }));
+    };
     sock.onmessage = (message) => {
       const msg = JSON.parse(message.data);
+      if (msg.operation !== 'event') return;
       store.dispatch({
         type: 'DIALOGUES_MESSAGE_PUSH',
-        payload: msg,
+        payload: msg.payload,
       });
+      const udoc = msg.payload.udoc;
       const notification = new VjNotification({
-        title: msg.udoc.uname,
-        avatar: msg.udoc.avatarUrl,
-        message: msg.mdoc.content,
+        title: udoc.uname,
+        avatar: udoc.avatarUrl,
+        message: msg.payload.mdoc.content,
         duration: 15000,
         action: () => {
           store.dispatch({
             type: 'DIALOGUES_SWITCH_TO',
-            payload: msg.udoc._id,
+            payload: udoc._id,
           });
           notification.hide();
         },
@@ -87,14 +101,10 @@ const page = new NamedPage('home_messages', () => {
   async function loadSendTarget() {
     const target = new URL(window.location.href).searchParams.get('target');
     if (!target) return;
-    const user = await api(gql`
-      users(search: ${target}, exact: true) {
-        _id
-        uname
-        avatarUrl
-        mail
-      }
-    `, ['data', 'users']);
+    const user = await api(
+      'users', { search: target, exact: true },
+      ['_id', 'uname', 'avatarUrl', 'mail'],
+    );
     if (!user?.length) return;
     createDialog(user[0]);
   }

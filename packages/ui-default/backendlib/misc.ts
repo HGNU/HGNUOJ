@@ -1,12 +1,10 @@
-import { AnsiUp } from 'ansi_up';
 import { moment, ObjectId } from 'hydrooj';
+import { AnsiUp } from 'ansi_up';
 
-export { size, formatSeconds } from 'hydrooj';
-
-const AU = new AnsiUp();
+export { formatSeconds, size } from 'hydrooj';
 
 export function ansiToHtml(str: string, whiteToBlack = true) {
-  const res = AU.ansi_to_html(str);
+  const res = new AnsiUp().ansi_to_html(str);
   return whiteToBlack ? res.replace(/style="color:rgb\(255,255,255\)"/g, 'style="color:black"') : res;
 }
 
@@ -46,4 +44,9 @@ export function* paginate(page: number, numPages: number) {
     yield ['next', page + 1];
     if (page < numPages - 1) yield ['last', numPages];
   }
+}
+
+export function buildQueryString(obj: Record<string, any>) {
+  return Object.entries(obj).filter(([key, value]) => value && !key.startsWith('__'))
+    .map(([key, value]) => `${key}=${encodeURIComponent(value)}`).join('&');
 }

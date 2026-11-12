@@ -1,4 +1,3 @@
-/* eslint-disable no-await-in-loop */
 import Schema from 'schemastery';
 import { STATUS } from '../model/builtin';
 import * as document from '../model/document';
@@ -8,9 +7,36 @@ import db from '../service/db';
 const sumStatus = (status) => ({ $sum: { $cond: [{ $eq: ['$status', status] }, 1, 0] } });
 
 export async function udoc(report) {
+    const userStats = new Map<string, { nLiked?: number, nAccept?: number, nSubmit?: number }>();
+
+    report({ message: 'Udoc nLiked' });
+    const likedPipeline = [
+        {
+            $match: {
+                docType: document.TYPE_PROBLEM_SOLUTION,
+                vote: { $gt: 0 },
+            },
+        },
+        {
+            $group: {
+                _id: { domainId: '$domainId', uid: '$owner' },
+                nLiked: { $sum: '$vote' },
+            },
+        },
+    ];
+    for await (const adoc of document.coll.aggregate<any>(likedPipeline, { allowDiskUse: true })) {
+        userStats.set(`${adoc._id.domainId}/${adoc._id.uid}`, { nLiked: adoc.nLiked });
+    }
+
     report({ message: 'Udoc' });
     const pipeline = [
-        { $match: { contest: { $nin: [RecordModel.RECORD_PRETEST, RecordModel.RECORD_GENERATE] } } },
+        {
+            $match: {
+                contest: { $nin: [RecordModel.RECORD_PRETEST, RecordModel.RECORD_GENERATE] },
+                status: { $ne: STATUS.STATUS_CANCELED },
+                uid: { $gte: 0 },
+            },
+        },
         {
             $group: {
                 _id: { domainId: '$domainId', pid: '$pid', uid: '$uid' },
@@ -26,41 +52,30 @@ export async function udoc(report) {
             },
         },
     ];
+    for await (const adoc of db.collection('record').aggregate<any>(pipeline, { allowDiskUse: true })) {
+        const key = `${adoc._id.domainId}/${adoc._id.uid}`;
+        const stat = userStats.get(key) || {};
+        stat.nSubmit = adoc.nSubmit;
+        stat.nAccept = adoc.nAccept;
+        userStats.set(key, stat);
+    }
+
     let bulk = db.collection('domain.user').initializeUnorderedBulkOp();
-    const cursor = db.collection('record').aggregate<any>(pipeline, { allowDiskUse: true });
-    for await (const adoc of cursor) {
-        bulk.find({
-            domainId: adoc._id.domainId,
-            uid: adoc._id.uid,
-        }).updateOne({
+    for (const [key, stat] of userStats) {
+        const [domainId, uid] = key.split('/');
+        bulk.find({ domainId, uid: +uid }).updateOne({
             $set: {
-                nSubmit: adoc.nSubmit,
-                nAccept: adoc.nAccept,
+                nSubmit: stat.nSubmit || 0,
+                nAccept: stat.nAccept || 0,
+                nLiked: stat.nLiked || 0,
             },
         });
         if (bulk.batches.length > 100) {
-            await bulk.execute();
+            await bulk.execute(); // eslint-disable-line no-await-in-loop
             bulk = db.collection('domain.user').initializeUnorderedBulkOp();
         }
     }
     if (bulk.batches.length) await bulk.execute();
-}
-
-export async function psdoc(report) {
-    report({ message: 'Psdoc' });
-    const pipeline = [
-        { $match: { contest: { $nin: [RecordModel.RECORD_PRETEST, RecordModel.RECORD_GENERATE] } } },
-        {
-            $group: {
-                _id: { domainId: '$domainId', pid: '$pid', uid: '$uid' },
-                nSubmit: { $sum: 1 },
-            },
-        },
-    ];
-    const data = db.collection('record').aggregate<any>(pipeline, { allowDiskUse: true });
-    for await (const adoc of data) {
-        await document.setStatus(adoc._id.domainId, document.TYPE_PROBLEM, adoc._id.pid, adoc._id.uid, { nSubmit: adoc.nSubmit });
-    }
 }
 
 export async function pdoc(report) {
@@ -157,9 +172,16 @@ export const apply = (ctx) => ctx.addScript(
         psdoc: Schema.boolean(),
     }),
     async (arg, report) => {
-        if (arg.pdoc === undefined || arg.pdoc) await pdoc(report);
-        if (arg.udoc === undefined || arg.udoc) await udoc(report);
-        if (arg.psdoc === undefined || arg.psdoc) await psdoc(report);
+        if (arg.pdoc === undefined || arg.pdoc) {
+            const start = Date.now();
+            await pdoc(report);
+            report({ message: `pdoc finished in ${Date.now() - start}ms` });
+        }
+        if (arg.udoc === undefined || arg.udoc) {
+            const start = Date.now();
+            await udoc(report);
+            report({ message: `udoc finished in ${Date.now() - start}ms` });
+        }
         return true;
     },
 );

@@ -1,15 +1,14 @@
 import { pick } from 'lodash';
 import { LRUCache } from 'lru-cache';
-import { Student, User } from '../interface';
-// import { UserNotFoundError } from '../error';
+import { Student } from '../interface';
+import { UserAlreadyExistError, UserNotFoundError, ValidationError } from '../error';
 import { Logger } from '../logger';
-import * as bus from '../service/bus';
+import bus from '../service/bus';
 import db from '../service/db';
 import { Value } from '../typeutils';
-// import { PERM, PRIV } from './builtin';
 import { ArgMethod } from '../utils';
 import TokenModel from './token';
-import UserModel from './user';
+import UserModel, { deleteUserCache, User } from './user';
 
 const coll = db.collection('stu.info');
 const domainUsercoll = db.collection('domain.user');
@@ -17,24 +16,18 @@ const domainUsercoll = db.collection('domain.user');
 const logger = new Logger('model/stuinfo');
 const cache = new LRUCache<string, any>({ max: 500, ttl: 300 * 1000 });
 
-export function deleteStudentCache(studoc: Student | string | undefined | null, receiver = false) {
-    if (!studoc) return;
-    if (!receiver) {
-        bus.broadcast(
-            'student/delcache',
-            JSON.stringify(typeof studoc === 'string' ? studoc : pick(studoc, ['stuid', '_id'])),
-        );
-    }
-    if (typeof studoc === 'string') {
-        for (const key of [...cache.keys()].filter((k) => k.endsWith(`/${studoc}`))) cache.delete(key);
-        return;
-    }
-    const id = [`uid/${studoc._id.toString()}`, `stuid/${studoc.stuid.toLowerCase()}`];
-    for (const key of [...cache.keys()].filter((k) => id.includes(`${k.split('/')[0]}/${k.split('/')[1]}`))) {
-        cache.delete(key);
-    }
+export function deleteStudentCache(studoc?: Student | string | null, receiver = false) {
+    // Student identity, class membership and both lookup keys change together.
+    cache.clear();
+    if (!receiver) bus.broadcast('student/delcache', JSON.stringify(studoc || null));
 }
 bus.on('student/delcache', (content) => deleteStudentCache(JSON.parse(content), true));
+
+export function validateStudentInfo(info: Partial<Student>) {
+    if (info.stuid !== undefined && !/^2(?:\d{7}|\d{12})$/.test(info.stuid)) throw new ValidationError('stuid');
+    if (info.name !== undefined && !/^[\u4E00-\u9FA5]{2,4}$/.test(info.name)) throw new ValidationError('name');
+    if (info.class !== undefined && !/^[\u4E00-\u9FA5]{2,4}[1-2][0-9]{3}$/.test(info.class)) throw new ValidationError('class');
+}
 
 class StudentModel {
     @ArgMethod
@@ -57,28 +50,56 @@ class StudentModel {
 
     @ArgMethod
     static async create(uid: number, classname?: string, name?: string, stuid?: string) {
+        const info = Object.fromEntries(Object.entries({ name, class: classname, stuid }).filter(([, v]) => v !== undefined));
         try {
-            await coll.insertOne({
-                _id: uid,
-                name,
-                class: classname,
-                stuid,
-            });
-            bus.broadcast('student/delCacheClassStudentsList', classname);
+            await coll.insertOne({ _id: uid, ...info });
         } catch (e) {
-            logger.warn('%o', e);
+            if (e?.code === 11000) throw new UserAlreadyExistError(stuid || uid);
+            throw e;
         }
+        deleteStudentCache();
+        deleteUserCache(await UserModel.coll.findOne({ _id: uid }));
+    }
+
+    static async createAccount(mail: string, uname: string, password: string, info: Partial<Student>, ip?: string) {
+        validateStudentInfo(info);
+        if (info.stuid && await this.getStuInfoByStuId(info.stuid)) throw new UserAlreadyExistError(info.stuid);
+        const uid = await UserModel.create(mail, uname, password, undefined, ip);
+        try {
+            await this.create(uid, info.class, info.name, info.stuid);
+        } catch (e) {
+            // This account has not been logged in or returned to the caller yet.
+            // Roll back only the account created by this call, leaving existing users intact.
+            const created = await UserModel.coll.findOne({ _id: uid });
+            await domainUsercoll.deleteMany({ uid });
+            await UserModel.coll.deleteOne({ _id: uid });
+            deleteUserCache(created);
+            throw e;
+        }
+        return uid;
     }
 
     @ArgMethod
     static async setById(uid: number, $set?: Partial<Student>, $unset?: Value<Partial<Student>, ''>) {
+        const owner = await UserModel.coll.findOne({ _id: uid });
+        if (!owner) throw new UserNotFoundError(uid);
+        const values = pick($set || {}, ['name', 'class', 'stuid']);
+        validateStudentInfo(values);
         const op: any = {};
-        if ($set && Object.keys($set).length) op.$set = $set;
-        if ($unset && Object.keys($unset).length) op.$unset = $unset;
-        if (Object.getOwnPropertyNames(op).length === 0) return null;
-        const res = await coll.findOneAndUpdate({ _id: uid }, op, { returnDocument: 'after' });
-        deleteStudentCache(uid.toString());
-        return res;
+        if (Object.keys(values).length) op.$set = values;
+        const unset = pick($unset || {}, ['name', 'class', 'stuid']);
+        if (Object.keys(unset).length) op.$unset = unset;
+        if (!Object.keys(op).length) return this.getStuInfoById(uid);
+        let result: Student;
+        try {
+            result = await coll.findOneAndUpdate({ _id: uid }, op, { returnDocument: 'after', upsert: true });
+        } catch (e) {
+            if (e?.code === 11000) throw new UserAlreadyExistError(values.stuid || uid);
+            throw e;
+        }
+        deleteStudentCache(result);
+        deleteUserCache(owner);
+        return result;
     }
 
     @ArgMethod
@@ -103,7 +124,7 @@ class StudentModel {
     static async getUserListByClassName(domain: string, cls: string): Promise<User[]> {
         const uids: number[] = await this.getUserUidsByClassName(domain, cls);
         const udocs: User[] = await Promise.all(uids.map((uid) => UserModel.getById(domain, uid)));
-        return udocs;
+        return udocs.filter(Boolean);
     }
 
     static async getUserListByClassNameOrdered(domain: string, cls: string, limit: number = 3): Promise<User[]> {
@@ -144,13 +165,13 @@ class StudentModel {
             if (cache.has(`activity/${cls._id}`)) activityList = cache.get(`activity/${cls._id}`);
             else {
                 activityList = await Promise.all(users.map(async (uid) => (
-                    await TokenModel.getMostRecentSessionByUid(uid, ['createAt', 'updateAt']))?.updateAt.valueOf()
-                    || (await UserModel.getById(domain, uid))?.loginat.valueOf()
+                    await TokenModel.getMostRecentSessionByUid(uid, ['createAt', 'updateAt']))?.updateAt?.valueOf()
+                    || (await UserModel.getById(domain, uid))?.loginat?.valueOf()
                     || Date.now() - 7 * 24 * 60 * 60 * 1000));
                 activityList = activityList.map((ac) => Math.max(ac, Date.now() - 7 * 24 * 60 * 60 * 1000));
                 await bus.broadcast('student/cacheActivity', cls._id, JSON.stringify(activityList));
             }
-            const activity = (activityList.reduce((pre, cur) => (pre + cur) / 2) % 1e10);
+            const activity = (activityList.reduce((sum, time) => sum + time, 0) / Math.max(activityList.length, 1));
             if (!clsInfoList.length) {
                 return {
                     ...cls, nAccept: 0, nSubmit: 0, rpSum: 1500 * cls.stuNum, rpAvg: 1500, activity,

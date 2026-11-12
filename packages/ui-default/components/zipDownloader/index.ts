@@ -1,9 +1,10 @@
+import { sleep } from '@hydrooj/utils/lib/common';
 import { dump } from 'js-yaml';
 import PQueue from 'p-queue';
 import streamsaver from 'streamsaver';
 import Notification from 'vj/components/notification';
 import {
-  api, createZipStream, gql, i18n, pipeStream, request,
+  api, createZipStream, i18n, pipeStream, request,
 } from 'vj/utils';
 import { ctx } from '../../context';
 
@@ -29,14 +30,16 @@ export default async function download(filename, targets) {
   const fileStream = streamsaver.createWriteStream(filename);
   const queue = new PQueue({ concurrency: 5 });
   const abortCallbackReceiver: any = {};
-  function stopDownload() { abortCallbackReceiver.abort?.(); }
+  function stopDownload(reason?: unknown) {
+    abortCallbackReceiver.abort?.(reason instanceof Error ? reason : new Error('Download aborted'));
+  }
   let i = 0;
-  async function downloadFile(target) {
+  async function downloadFile(target, retry = 5) {
     try {
       let stream;
       if (target.url) {
         const response = await fetch(target.url);
-        if (!response.ok) throw response.statusText;
+        if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
         stream = response.body;
       } else {
         stream = new Blob([target.content]).stream();
@@ -46,11 +49,15 @@ export default async function download(filename, targets) {
         stream,
       };
     } catch (e) {
-      window.captureException?.(e);
-      stopDownload();
-      Notification.error(i18n('Download Error: {0} {1}', [target.filename, e.toString()]));
+      if (retry) {
+        Notification.warn(i18n('Download Error: {0} {1}, retry in 3 secs...', [target.filename, String(e)]));
+        await sleep(3000);
+        return await downloadFile(target, retry - 1);
+      }
+      const error = new Error(i18n('Download Error: {0} {1}', [target.filename, String(e)]));
+      stopDownload(error);
+      throw error;
     }
-    return {};
   }
   const handles = [];
   for (const target of targets) {
@@ -78,33 +85,49 @@ export default async function download(filename, targets) {
 
 declare module '../../api' {
   interface EventMap {
-    'problemset/download': (pids: number[], name: string, targets: { filename: string; url?: string; content?: string }[]) => void;
+    'problemset/download': (pids: number[], name: string, targets: { filename: string, url?: string, content?: string }[]) => void;
   }
 }
 
 export async function downloadProblemSet(pids, name = 'Export') {
   Notification.info(i18n('Downloading...'));
-  const targets = [];
+  const targets: { filename: string, url?: string, content?: string }[] = [];
   try {
     await ctx.serial('problemset/download', pids, name, targets);
     for (const pid of pids) {
-      const pdoc = await api(gql`
-        problem(id: ${+pid}) {
-          pid
-          owner
-          title
-          content
-          tag
-          nSubmit
-          nAccept
-          data {
-            name
+      const pdoc = await api('problem', { id: +pid }, {
+        pid: 1,
+        owner: 1,
+        title: 1,
+        statements: {
+          name: 1,
+          lang: 1,
+          content: 1,
+          file: 1,
+        },
+        tag: 1,
+        nSubmit: 1,
+        nAccept: 1,
+        data: {
+          name: 1,
+        },
+        additional_file: {
+          name: 1,
+        },
+      });
+      const statements: any[] = pdoc.statements || [];
+      const manifest = statements.map((entry) => {
+        if (/[/\\\0]/.test(entry.name)) throw new Error(`Invalid statement filename: ${entry.name}`);
+        if (entry.file) {
+          if (!pdoc.additional_file?.some((file) => file.name === entry.file)) {
+            throw new Error(`Missing statement file: ${entry.file}`);
           }
-          additional_file {
-            name
-          }
+          return { name: entry.name, lang: entry.lang, file: entry.file };
         }
-      `, ['data', 'problem']);
+        const source = `problem_${entry.name}`;
+        targets.push({ filename: `${pid}/${source}`, content: entry.content ?? '' });
+        return { name: entry.name, lang: entry.lang, source };
+      });
       targets.push({
         filename: `${pid}/problem.yaml`,
         content: dump({
@@ -114,23 +137,9 @@ export async function downloadProblemSet(pids, name = 'Export') {
           tag: pdoc.tag,
           nSubmit: pdoc.nSubmit,
           nAccept: pdoc.nAccept,
+          statements: manifest,
         }),
       });
-      try {
-        const c = JSON.parse(pdoc.content);
-        if (c instanceof Array || typeof c === 'string') throw new Error();
-        for (const key of Object.keys(c)) {
-          targets.push({
-            filename: `${pid}/problem_${key}.md`,
-            content: typeof c[key] === 'string' ? c[key] : JSON.stringify(c[key]),
-          });
-        }
-      } catch (e) {
-        targets.push({
-          filename: `${pid}/problem.md`,
-          content: pdoc.content,
-        });
-      }
       let { links } = await request.post(
         `/d/${UiContext.domainId}/p/${pid}/files`,
         { operation: 'get_links', files: (pdoc.data || []).map((i) => i.name), type: 'testdata' },
@@ -151,6 +160,3 @@ export async function downloadProblemSet(pids, name = 'Export') {
     Notification.error(`${e.message} ${e.params?.[0]}`);
   }
 }
-
-window.Hydro.components.downloadProblemSet = downloadProblemSet;
-window.Hydro.components.download = download;

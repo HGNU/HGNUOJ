@@ -3,7 +3,7 @@ import {
 } from 'prom-client';
 import { Context, db } from 'hydrooj';
 
-declare module 'hydrooj' {
+declare module 'cordis' {
     interface Context {
         metrics: Registry;
     }
@@ -16,7 +16,7 @@ export function createRegistry(ctx: Context) {
     function createMetric<Q extends string, T extends (new (a: any) => Metric<Q>)>(
         C: T, name: string, help: string, extra?: T extends new (a: infer R) => any ? Partial<R> : never,
     ): T extends (new (a) => Gauge<Q>) ? Gauge<Q> : T extends (new (a) => Counter<Q>) ? Counter<Q> : Metric<Q> {
-        const metric = new C({ name, help, ...(extra || {}) });
+        const metric = new C({ name, help, ...extra });
         registry.registerMetric(metric);
         return metric as any;
     }
@@ -66,6 +66,20 @@ export function createRegistry(ctx: Context) {
         labelNames: ['type'],
     });
 
+    ctx.inject(['server'], () => {
+        const gauge = createMetric(Gauge, 'hydro_active_handler', 'active handler count', {
+            async collect() {
+                const stats = ctx.server.statistics();
+                this.reset();
+                for (const key in stats) this.set({ type: key }, stats[key]);
+            },
+            labelNames: ['type'],
+        });
+        return () => {
+            gauge.remove();
+        };
+    });
+
     const eventCounter = createMetric(Counter, 'hydro_eventcount', 'eventcount', {
         labelNames: ['name'],
     });
@@ -75,7 +89,6 @@ export function createRegistry(ctx: Context) {
 
     collectDefaultMetrics({ register: registry });
 
-    ctx.provide('metrics');
-    ctx.metrics = registry;
+    ctx.provide('metrics', registry);
     return registry;
 }

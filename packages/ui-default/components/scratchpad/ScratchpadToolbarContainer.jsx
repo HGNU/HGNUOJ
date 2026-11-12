@@ -1,4 +1,3 @@
-/* eslint-disable react/static-property-placement */
 import _ from 'lodash';
 import PropTypes from 'prop-types';
 import React from 'react';
@@ -40,7 +39,7 @@ const mapDispatchToProps = (dispatch) => ({
     const req = request.post(UiContext.postSubmitUrl, {
       lang: props.editorLang,
       code: props.editorCode,
-      input: props.pretestInput,
+      input: [props.pretestInput],
       pretest: true,
     });
     dispatch({

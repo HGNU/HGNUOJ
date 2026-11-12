@@ -1,9 +1,10 @@
 import $ from 'jquery';
+import { debounce } from 'lodash';
 import { nanoid } from 'nanoid';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import DOMAttachedObject from 'vj/components/DOMAttachedObject';
-import { i18n } from 'vj/utils';
+import { getTheme, i18n } from 'vj/utils';
 import uploadFiles from '../upload';
 
 interface MonacoOptions {
@@ -40,8 +41,8 @@ export default class Editor extends DOMAttachedObject {
     const { load } = await import('vj/components/monaco/loader');
     const {
       onChange, language = 'markdown',
-      theme = UserContext.monacoTheme || 'vs-light',
-      model = `file://model-${Math.random().toString(16)}`,
+      theme = `vs-${getTheme()}`,
+      model = `file://model-${Math.random().toString(16).slice(2)}.${language}`,
       autoResize = true, autoLayout = true,
       hide = [], lineNumbers = 'on',
     } = this.options;
@@ -145,8 +146,13 @@ export default class Editor extends DOMAttachedObject {
 
   async initMarkdownEditor() {
     const pagename = document.documentElement.getAttribute('data-page');
-    const isProblemPage = ['problem_create', 'problem_edit'].includes(pagename);
-    const isProblemEdit = pagename === 'problem_edit';
+    const pageUploadConfig: Record<string, { endpoint: string, type?: string }> = {
+      problem_edit: { endpoint: './files', type: 'additional_file' },
+      homework_edit: { endpoint: './file' },
+      contest_edit: { endpoint: './management', type: 'public' },
+    };
+    const uploadCfg = pageUploadConfig[pagename];
+    const useFileProtocol = !!uploadCfg || ['problem_create', 'homework_create', 'contest_create'].includes(pagename);
     const that = this;
     const { $dom } = this;
     const hasFocus = $dom.is(':focus') || $dom.hasClass('autofocus');
@@ -156,22 +162,30 @@ export default class Editor extends DOMAttachedObject {
     const { onChange } = this.options;
     const { MdEditor } = await import('./mdeditor');
 
+    const debouncedTrigger = debounce(() => {
+      $(document.querySelector('.md-editor-preview')).trigger('vjContentNew');
+    }, 500, { trailing: true });
     const renderCallback = (ref) => {
       this.markdownEditor = ref;
+      setTimeout(debouncedTrigger, 200);
     };
 
     function EditorComponent() {
       const [val, setVal] = React.useState(value);
       that.setMarkdownEditorValue = setVal;
       return <MdEditor
-        className='textbox'
+        className="textbox"
         autoFocus={hasFocus}
-        codeTheme='github'
+        codeTheme="github"
         codeStyleReverse={false}
         ref={renderCallback}
-        modelValue={val}
+        value={val}
+        theme={getTheme()}
+        language={UserContext.viewLang === 'zh' ? 'zh-CN' : UserContext.viewLang?.replace('_', '-')}
         noMermaid
         noPrettier
+        noKatex
+        noHighlight
         autoDetectCode
         toolbarsExclude={[
           // 'bold',
@@ -180,8 +194,8 @@ export default class Editor extends DOMAttachedObject {
           // '-',
           // 'strikeThrough',
           // 'title',
-          // 'sub',
-          // 'sup',
+          'sub',
+          'sup',
           // 'quote',
           // 'unorderedList',
           // 'orderedList',
@@ -213,8 +227,10 @@ export default class Editor extends DOMAttachedObject {
           $dom.val(v);
           $dom.text(v);
           onChange?.(v);
+          setTimeout(debouncedTrigger, 100);
         }}
         onUploadImg={async (files, callback) => {
+          if (!files.length) return null;
           let ext: string;
           const matches = files[0].type.match(/^image\/(png|jpg|jpeg|gif)$/i);
           if (matches) {
@@ -224,11 +240,11 @@ export default class Editor extends DOMAttachedObject {
           }
           if (!ext) return i18n('No Supported file type.');
           const filename = `${nanoid()}.${ext}`;
-          await uploadFiles(isProblemEdit ? './files' : '/file', [files[0]], {
-            type: isProblemEdit ? 'additional_file' : undefined,
+          await uploadFiles(uploadCfg?.endpoint || '/file', [files[0]], {
+            type: uploadCfg?.type,
             filenameCallback: () => filename,
           }).then(() => {
-            callback([`${isProblemPage ? 'file://' : `/file/${UserContext._id}/`}${filename}`]);
+            callback([`${useFileProtocol ? 'file://' : `/file/${UserContext._id}/`}${filename}`]);
           }).catch(() => {
             callback([]);
           });
@@ -236,6 +252,8 @@ export default class Editor extends DOMAttachedObject {
         }}
       />;
     }
+
+    this.valueCache = value;
 
     this.reactRoot = ReactDOM.createRoot(ele);
     this.reactRoot.render(<EditorComponent />);

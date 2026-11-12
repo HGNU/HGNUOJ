@@ -1,6 +1,6 @@
 import $ from 'jquery';
 import UserSelectAutoComplete from 'vj/components/autocomplete/UserSelectAutoComplete';
-import { ActionDialog } from 'vj/components/dialog';
+import { ActionDialog, confirm } from 'vj/components/dialog';
 import Notification from 'vj/components/notification';
 import { NamedPage } from 'vj/misc/Page';
 import {
@@ -52,46 +52,61 @@ const page = new NamedPage('contest_user', () => {
     return this;
   };
 
+  async function handlePostRequest(params, successMessage) {
+    try {
+      const res = await request.post('', params);
+      if (res.url && res.url !== window.location.href) window.location.href = res.url;
+      else {
+        Notification.success(successMessage);
+        pjax.request({ push: false });
+      }
+    } catch (error) {
+      Notification.error([error.message, ...(error.params || [])].join(' '));
+    }
+  }
+
   async function handleClickAddUser() {
     const action = await addUserDialog.clear().open();
     if (action !== 'ok') return;
     const unrank = addUserDialog.$dom.find('[name="unrank"]').prop('checked');
     const uids = userSelect.value();
-    try {
-      const res = await request.post('', {
-        operation: 'add_user',
-        uids: uids.join(','),
-        unrank,
-      });
-      if (res.url && res.url !== window.location.href) window.location.href = res.url;
-      else {
-        Notification.success(i18n('User added.'));
-        pjax.request({ push: false });
-      }
-    } catch (error) {
-      Notification.error([error.message, ...error.params].join(' '));
-    }
+    await handlePostRequest({
+      operation: 'add_user',
+      uids: uids.join(','),
+      unrank,
+    }, i18n('User added.'));
   }
 
   async function handleEditRank(ev) {
     const uid = $(ev.target).data('uid');
-    try {
-      const res = await request.post('', {
-        operation: 'rank',
-        uid,
-      });
-      if (res.url && res.url !== window.location.href) window.location.href = res.url;
-      else {
-        Notification.success(i18n('Ranking status updated.'));
-        pjax.request({ push: false });
-      }
-    } catch (error) {
-      Notification.error([error.message, ...error.params].join(' '));
-    }
+    await handlePostRequest({
+      operation: 'rank',
+      uid,
+    }, i18n('Ranking status updated.'));
+  }
+
+  async function handleResume(ev) {
+    const uid = $(ev.target).data('uid');
+    await handlePostRequest({
+      operation: 'resume',
+      uid,
+    }, i18n('Contest resumed.'));
+  }
+
+  async function handleCancelRegistration(ev) {
+    const uid = $(ev.target).data('uid');
+    const yes = await confirm(i18n('Are you sure to cancel the registration of this user?'));
+    if (!yes) return;
+    await handlePostRequest({
+      operation: 'remove_user',
+      uid,
+    }, i18n('Registration cancelled.'));
   }
 
   $('[name="add_user"]').on('click', () => handleClickAddUser());
   $(document).on('click', '[name="edit_rank"]', handleEditRank);
+  $(document).on('click', '[name="resume_contest"]', handleResume);
+  $(document).on('click', '[name="cancel_registration"]', handleCancelRegistration);
 });
 
 export default page;

@@ -1,8 +1,9 @@
 import $ from 'jquery';
-import yaml from 'js-yaml';
+import * as yaml from 'js-yaml';
+import _ from 'lodash';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { ConfirmDialog } from 'vj/components/dialog';
+import { confirm } from 'vj/components/dialog';
 import Notification from 'vj/components/notification';
 import { downloadProblemSet } from 'vj/components/zipDownloader';
 import { NamedPage } from 'vj/misc/Page';
@@ -115,21 +116,23 @@ const page = new NamedPage(['problem_detail', 'contest_detail_problem', 'homewor
   }
 
   async function scratchpadFadeIn() {
-    // @ts-ignore
     await $('#scratchpad')
+      // @ts-ignore
       .transition(
         { opacity: 1 },
-        { duration: 200, easing: 'easeOutCubic' },
+        200,
+        'easeOutCubic',
       )
       .promise();
   }
 
   async function scratchpadFadeOut() {
-    // @ts-ignore
     await $('#scratchpad')
+      // @ts-ignore
       .transition(
         { opacity: 0 },
-        { duration: 200, easing: 'easeOutCubic' },
+        200,
+        'easeOutCubic',
       )
       .promise();
   }
@@ -142,6 +145,34 @@ const page = new NamedPage(['problem_detail', 'contest_detail_problem', 'homewor
     const { default: ScratchpadApp } = await import('../components/scratchpad');
     const { default: ScratchpadReducer } = await import('../components/scratchpad/reducers');
     const { Provider, store } = await loadReactRedux(ScratchpadReducer);
+    let cacheKey = `${UserContext._id}/${UiContext.pdoc.domainId}/${UiContext.pdoc.docId}`;
+    if (UiContext.tdoc?._id) cacheKey += `@${UiContext.tdoc._id}`;
+    try {
+      const draft = await (await openDB).get('scratchpad-drafts', cacheKey);
+      if (draft) {
+        store.dispatch({
+          type: 'SCRATCHPAD_EDITOR_HYDRATE',
+          payload: {
+            code: draft.code ?? UiContext.codeTemplate,
+            lang: draft.lang ?? UiContext.codeLang,
+          },
+        });
+      }
+    } catch { }
+
+    let previousEditorState = store.getState().editor;
+    let write: Promise<any> = Promise.resolve();
+    const saveDraft = _.debounce((code: string, lang: string) => {
+      write = write
+        .then(() => openDB.then((db) => db.put('scratchpad-drafts', { id: cacheKey, code, lang })))
+        .catch(() => { });
+    }, 400);
+    store.subscribe(() => {
+      const editor = store.getState().editor;
+      if (editor === previousEditorState) return;
+      previousEditorState = editor;
+      saveDraft(editor.code, editor.lang);
+    });
 
     // @ts-ignore
     window.store = store;
@@ -194,15 +225,15 @@ const page = new NamedPage(['problem_detail', 'contest_detail_problem', 'homewor
     const ans = {};
     const pids = [];
     let cnt = 0;
-    const reg = /{{ (input|select|multiselect|textarea)\(\d+(-\d+)?\) }}/g;
+    const reg = /\{\{ (input|select|multiselect|textarea|dropdown)\(\d+(-\d+)?\)(?:\[([^\]]*)\])? \}\}/g;
     $('.problem-content .typo').children().each((i, e) => {
-      if (e.tagName === 'PRE' && !e.children[0].className.includes('#input')) return;
+      if (e.tagName === 'PRE' && !e.children[0]?.className.includes('#input')) return;
       const questions = [];
       let q;
-      while (q = reg.exec(e.innerText)) questions.push(q); // eslint-disable-line no-cond-assign
-      for (const [info, type] of questions) {
+      while (q = reg.exec(e.textContent)) questions.push(q); // eslint-disable-line no-cond-assign
+      for (const [info, type, , options] of questions) {
         cnt++;
-        const id = info.replace(/{{ (input|select|multiselect|textarea)\((\d+(-\d+)?)\) }}/, '$2');
+        const id = info.replace(/\{\{ (input|select|multiselect|textarea|dropdown)\((\d+(-\d+)?)\)(?:\[([^\]]*)\])? \}\}/, '$2');
         pids.push(id);
         if (type === 'input') {
           $(e).html($(e).html().replace(info, tpl`
@@ -214,6 +245,16 @@ const page = new NamedPage(['problem_detail', 'contest_detail_problem', 'homewor
           $(e).html($(e).html().replace(info, tpl`
             <div class="objective_${id} medium-6" id="p${id}">
               <textarea name="${id}" class="textbox objective-input"></textarea>
+            </div>
+          `));
+        } else if (type === 'dropdown') {
+          const opts = (options || '').split(',').map((s) => s.trim()).filter(Boolean);
+          $(e).html($(e).html().replace(info, tpl`
+            <div class="objective_${id} medium-3 select-container" id="p${id}" style="display: inline-block;">
+              <select name="${id}" class="objective-input select">
+                <option value=""></option>
+                ${{ templateRaw: true, html: opts.map((o) => tpl`<option value="${o}">${o}</option>`).join('') }}
+              </select>
             </div>
           `));
         } else {
@@ -239,16 +280,6 @@ const page = new NamedPage(['problem_detail', 'contest_detail_problem', 'homewor
     if (UiContext.tdoc?._id && UiContext.tdoc.rule !== 'homework') cacheKey += `@${UiContext.tdoc._id}`;
 
     let setUpdate;
-    function ProblemNavigation() {
-      [, setUpdate] = React.useState(0);
-      return <div className="contest-problems" style={{ margin: '1em' }}>
-        {pids.map((i) => <a href={`#p${i}`} className={ans[i] ? 'pass ' : ''}>
-          <span className="id">{i}</span>
-          {ans[i] && <span className="icon icon-check"></span>}
-        </a>)}
-      </div>;
-    }
-
     const db = await openDB;
     async function saveAns() {
       await db.put('solutions', {
@@ -257,9 +288,36 @@ const page = new NamedPage(['problem_detail', 'contest_detail_problem', 'homewor
       });
     }
     async function clearAns() {
+      if (!(await confirm(i18n('All changes will be lost. Are you sure to clear all answers?')))) return;
       await db.delete('solutions', `${cacheKey}#objective`);
       window.location.reload();
     }
+
+    function ProblemNavigation() {
+      [, setUpdate] = React.useState(0);
+      const update = React.useCallback(() => { setUpdate?.((v) => v + 1); }, []);
+      React.useEffect(() => {
+        $(document).on('click', update);
+        $(document).on('input', update);
+        return () => {
+          $(document).off('click', update);
+          $(document).off('input', update);
+        };
+      }, [update]);
+      return <>
+        <div className="contest-problems" style={{ margin: '1em' }}>
+          {pids.map((i) => <a href={`#p${i}`} key={i} className={ans[i] ? 'pending ' : ''}>
+            <span className="id">{i}</span>
+          </a>)}
+        </div>
+        <li className="menu__item">
+          <button className="menu__link" onClick={clearAns}>
+            <span className="icon icon-erase" /> {i18n('Clear answers')}
+          </button>
+        </li>
+      </>;
+    }
+
     async function loadAns() {
       const saved = await db.get('solutions', `${cacheKey}#objective`);
       if (typeof saved?.value !== 'string') return;
@@ -271,7 +329,7 @@ const page = new NamedPage(['problem_detail', 'contest_detail_problem', 'homewor
             if (isValidOption(v)) $(`.objective_${id} input[value="${v}"]`).prop('checked', true);
           }
         } else if (val) {
-          $(`.objective_${id} input[type=text], .objective_${id} textarea`).val(val.toString());
+          $(`.objective_${id} input[type=text], .objective_${id} textarea, .objective_${id} select`).val(val.toString());
           if (isValidOption(val)) $(`.objective_${id}.radiobox [value="${val}"]`).prop('checked', true);
         }
       }
@@ -311,21 +369,13 @@ const page = new NamedPage(['problem_detail', 'contest_detail_problem', 'homewor
             Notification.error(err.message);
           });
       });
-      $('.section--problem-sidebar ol.menu').prepend(tpl(<li className="menu__item" id="clearAnswers">
-        <a className="menu__link" href="javascript:;">
-          <span className="icon icon-erase" /> {i18n('Clear answers')}
-        </a>
-      </li>));
-      $(document).on('click', '#clearAnswers', async () => {
-        const result = await new ConfirmDialog({
-          $body: tpl.typoMsg('All changes will be lost. Are you sure to clear all answers?'),
-        }).open();
-        if (result === 'yes') await clearAns();
-      });
     }
-    const ele = document.createElement('div');
-    $('.section--problem-sidebar ol.menu').prepend(ele);
-    createRoot(ele).render(<ProblemNavigation />);
+    if (!document.getElementById('problem-navigation')) {
+      const ele = document.createElement('div');
+      ele.id = 'problem-navigation';
+      $('.section--problem-sidebar ol.menu').prepend(ele);
+      createRoot(document.getElementById('problem-navigation')).render(<ProblemNavigation />);
+    }
     $('.non-scratchpad--hide').hide();
     $('.scratchpad--hide').hide();
     $('.outer-loader-container').hide();
@@ -344,9 +394,12 @@ const page = new NamedPage(['problem_detail', 'contest_detail_problem', 'homewor
     ev.preventDefault();
     const url = new URL(window.location.href);
     url.searchParams.set('lang', ev.currentTarget.dataset.lang);
-    $('[data-lang]').removeClass('tab--active');
+    url.searchParams.delete('file');
     pjax.request({ url: url.toString() });
-    $(ev.currentTarget).addClass('tab--active');
+  });
+  $(document).on('click', '.statement-file-tab', (ev) => {
+    ev.preventDefault();
+    pjax.request({ url: $(ev.currentTarget).attr('href') });
   });
   $(document).on('click', '[name="show_tags"]', (ev) => {
     $(ev.currentTarget).hide();

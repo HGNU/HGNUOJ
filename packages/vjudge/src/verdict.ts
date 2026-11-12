@@ -1,10 +1,16 @@
-import { STATUS } from '@hydrooj/utils/lib/status';
+import { STATUS } from '@hydrooj/common';
 
 export function normalize(key: string) {
-    return key.toUpperCase().replace(/ /g, '_');
+    return key.toUpperCase().replace(/[ _-]/g, '');
 }
 
-export const VERDICT = new Proxy<Record<string, STATUS>>({
+function removeSlash(src: Record<string, STATUS>) {
+    const dst = {};
+    for (const key of Object.keys(src)) dst[key.replace(/_/g, '')] = src[key];
+    return dst;
+}
+
+export const VERDICT = new Proxy<Record<string, STATUS>>(removeSlash({
     RUNTIME_ERROR: STATUS.STATUS_RUNTIME_ERROR,
     WRONG_ANSWER: STATUS.STATUS_WRONG_ANSWER,
     OK: STATUS.STATUS_ACCEPTED,
@@ -18,6 +24,8 @@ export const VERDICT = new Proxy<Record<string, STATUS>>({
     EXTRA_TEST_PASSED: STATUS.STATUS_ACCEPTED,
     COMPILE_ERROR: STATUS.STATUS_COMPILE_ERROR,
     'RUNNING_&_JUDGING': STATUS.STATUS_JUDGING,
+    QUEUING: STATUS.STATUS_WAITING,
+    RUNNING: STATUS.STATUS_JUDGING,
 
     // Codeforces
     'HAPPY_NEW_YEAR!': STATUS.STATUS_ACCEPTED,
@@ -73,7 +81,7 @@ export const VERDICT = new Proxy<Record<string, STATUS>>({
     SYSTEM_ERROR: STATUS.STATUS_SYSTEM_ERROR,
     SE: STATUS.STATUS_SYSTEM_ERROR,
     未知错误: STATUS.STATUS_SYSTEM_ERROR,
-}, {
+}), {
     get(self, key) {
         if (typeof key === 'symbol') return null;
         key = normalize(key);

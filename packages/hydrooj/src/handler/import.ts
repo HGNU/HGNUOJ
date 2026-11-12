@@ -13,13 +13,20 @@ class ProblemImportHydroHandler extends Handler {
 
     @param('keepUser', Types.Boolean)
     @param('preferredPrefix', Types.String, true)
-    async post(domainId: string, keepUser: boolean, preferredPrefix?: string) {
+    @param('hidden', Types.Boolean)
+    async post(domainId: string, keepUser: boolean, preferredPrefix?: string, hidden?: boolean) {
         if (keepUser) this.checkPriv(PRIV.PRIV_EDIT_SYSTEM);
         if (!this.request.files.file) throw new ValidationError('file');
         if (preferredPrefix && !/^[a-zA-Z]+$/.test(preferredPrefix)) throw new ValidationError('preferredPrefix');
         const promise = problem.import(
-            domainId, this.request.files.file.filepath, keepUser ? null : this.user._id,
-            preferredPrefix, this.progress.bind(this),
+            domainId, this.request.files.file.filepath,
+            {
+                preferredPrefix,
+                progress: this.progress.bind(this),
+                operator: keepUser ? null : this.user._id,
+                delSource: true,
+                hidden,
+            },
         ).catch((e) => MessageModel.send(1, this.user._id, `Import failed: ${e.message}\n${e.stack}`));
         let resolved = false;
         await Promise.race([

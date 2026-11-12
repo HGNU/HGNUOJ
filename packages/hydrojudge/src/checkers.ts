@@ -1,5 +1,4 @@
-/* eslint-disable no-template-curly-in-string */
-import { STATUS } from '@hydrooj/utils/lib/status';
+import { DetailType, STATUS } from '@hydrooj/common';
 import { FormatError, SystemError } from './error';
 import { CopyInFile, runQueued } from './sandbox';
 import { parse } from './testlib';
@@ -10,41 +9,49 @@ export interface CheckConfig {
     output: CopyInFile;
     user_stdout: CopyInFile;
     user_stderr: CopyInFile;
+    code: CopyInFile;
     copyIn: Record<string, CopyInFile>;
     score: number;
-    detail: boolean;
+    detail: DetailType;
     env?: Record<string, string>;
 }
 
+export interface PassInfo { input: CopyInFile, state?: Record<string, CopyInFile>, dispose: () => PromiseLike<any> }
+
 type Checker = (config: CheckConfig) => Promise<{
-    status: number,
-    score: number,
-    message: string,
+    status: number;
+    score: number;
+    message: string | { message: string, params?: any[] };
+    nextPass?: PassInfo;
 }>;
 
 function parseDiffMsg(msg: string) {
+    msg = msg.trim();
     try {
-        // Note: we only handle first diff
-        const desc = msg.split('\n')[0];
-        if (desc.includes('d')) return 'User output longer than standard answer.';
-        if (desc.includes('a')) return 'Standard answer longer than user output.';
-        const pt = msg.split('---');
-        // Get the first different line
-        const u = pt[0].split('\n')[1];
-        const t = pt[1].split('\n')[1];
+        if (!msg) return '';
+        if (!msg.startsWith('L=')) throw new Error();
+        const [meta, u, t] = msg.split('\n');
+        const lline = meta.split('L=')[1];
+        if (lline?.trim() === 'EOF') {
+            const next = u.split('EOF on ')[1].split(' ')[0];
+            if (next === 'usrout.processed') return { message: 'Standard answer longer than user output.', params: [] };
+            if (next === 'answer.processed') return { message: 'User output longer than standard answer.', params: [] };
+            return `Unable to parse: ${u}`;
+        }
+        const lineNum = +lline;
         // Split by token
-        const usr = u.substring(2).trim().split(' ');
-        const std = t.substring(2).trim().split(' ');
+        const usr = u.trim().split(' ');
+        const std = t.trim().split(' ');
         if (std.every((x) => !Number.isNaN(+x))) {
             // Number mode, report length not match
-            if (usr.length > std.length) return 'User output longer than standard answer.';
-            if (usr.length < std.length) return 'Standard answer longer than user output.';
+            if (usr.length > std.length) return { message: 'User output longer than standard answer.', params: [] };
+            if (usr.length < std.length) return { message: 'Standard answer longer than user output.', params: [] };
         }
         for (let i = 0; i < usr.length; i++) {
             if (usr[i] === std[i]) continue;
             const usrString = usr[i].length > 20 ? `${usr[i].substring(0, 16)}...` : usr[i];
             const stdString = std[i].length > 20 ? `${std[i].substring(0, 16)}...` : std[i];
-            return { message: 'Read {0}, expect {1}.', params: [usrString, stdString] };
+            return { message: 'On line {0}: Read {1}, expect {2}.', params: [lineNum, usrString, stdString] };
         }
         throw new Error();
     } catch (e) {
@@ -52,44 +59,79 @@ function parseDiffMsg(msg: string) {
     }
 }
 
-const checkers: Record<string, Checker> = new Proxy({
-    async default(config) {
-        const { stdout } = await runQueued('/usr/bin/diff -BZ usrout answer', {
-            copyIn: {
-                usrout: config.user_stdout,
-                answer: config.output,
-                ...config.copyIn,
-            },
-        });
-        let status: number;
-        let message: any = '';
-        if (stdout) {
-            status = STATUS.STATUS_WRONG_ANSWER;
-            if (config.detail) message = parseDiffMsg(stdout);
-        } else status = STATUS.STATUS_ACCEPTED;
-        if (message.length > 1024000) message = '';
-        return {
-            score: status === STATUS.STATUS_ACCEPTED ? config.score : 0,
-            status,
-            message,
-        };
-    },
+const compareSh = `#!/bin/bash
+set -e
+process_file() {
+  cat $1 | awk '
+    {sub(/\\r+$/,"")}
+    /^$/{n=n RS};
+    /./{
+      printf "%s",n; n="";
+      for (i=length; i>0; i--) {
+        c = substr($0, i, 1);
+        if (c != " " && c != "\\t" && c != "\\r") break
+      }
+      if (i == 0) print ""
+      else print substr($0, 1, i);
+    }' >$2
+}
+if [ "$1" = "BZ" ]; then
+  process_file usrout usrout.processed
+  process_file answer answer.processed
+else
+  cat usrout | awk '{sub(/\\r+$/, ""); print $0;}' >usrout.processed
+  cat answer | awk '{sub(/\\r+$/, ""); print $0;}' >answer.processed
+fi
+usrsize=$(wc -c < usrout.processed)
+stdsize=$(wc -c < answer.processed)
+if [ "$usrsize" -gt "$stdsize" ]; then
+  echo " (EOF)${' '.repeat(64)}" >>answer.processed
+elif [ "$usrsize" -lt "$stdsize" ]; then
+  echo " (EOF)${' '.repeat(64)}" >>usrout.processed
+fi
+result=$(cmp usrout.processed answer.processed || true)
+linenum=$(echo "$result" | awk '{print $NF}')
+if [ -n "$linenum" ]; then
+  echo "L=$linenum"
+  awk "NR==$linenum" usrout.processed
+  awk "NR==$linenum" answer.processed
+elif [ -n "$result" ]; then
+  # cmp: EOF on [filename] which is empty
+  echo "L=EOF"
+  echo "$result"
+fi
+`;
 
-    async strict(config) {
-        const { stdout } = await runQueued('/usr/bin/diff usrout answer', {
-            copyIn: {
-                usrout: config.user_stdout,
-                answer: config.output,
-                ...config.copyIn,
-            },
-        });
-        const status = stdout ? STATUS.STATUS_WRONG_ANSWER : STATUS.STATUS_ACCEPTED;
-        return {
-            score: status === STATUS.STATUS_ACCEPTED ? config.score : 0,
-            status,
-            message: '',
-        };
-    },
+const getDefaultChecker = (strict: boolean) => async (config: CheckConfig) => {
+    const { code, stdout } = await runQueued(`/bin/bash compare.sh${strict ? '' : ' BZ'}`, {
+        copyIn: {
+            usrout: config.user_stdout,
+            answer: config.output,
+            ...config.copyIn,
+            'compare.sh': { content: compareSh },
+        },
+        processLimit: 32,
+    });
+    let status: number;
+    let message: any = '';
+    if (code) {
+        status = STATUS.STATUS_SYSTEM_ERROR;
+        message = `Checker returned with status ${code}`;
+    } else if (stdout) {
+        status = STATUS.STATUS_WRONG_ANSWER;
+        if (config.detail === 'full') message = parseDiffMsg(stdout);
+    } else status = STATUS.STATUS_ACCEPTED;
+    if (typeof message === 'string' && message.length > 1024000) message = '';
+    return {
+        score: status === STATUS.STATUS_ACCEPTED ? config.score : 0,
+        status,
+        message,
+    };
+};
+
+const checkers: Record<string, Checker> = new Proxy({
+    default: getDefaultChecker(false),
+    strict: getDefaultChecker(true),
 
     /*
      * argv[1]：输入
@@ -110,7 +152,7 @@ const checkers: Record<string, Checker> = new Proxy({
         return {
             status,
             score: status === STATUS.STATUS_ACCEPTED ? config.score : 0,
-            message: stdout,
+            message: config.detail === 'full' ? stdout : '',
         };
     },
 
@@ -143,7 +185,7 @@ const checkers: Record<string, Checker> = new Proxy({
         const score = Math.floor(+files.score) || 0;
         return {
             score,
-            message: files.message,
+            message: config.detail === 'full' ? files.message : '',
             status: score === config.score
                 ? STATUS.STATUS_ACCEPTED
                 : STATUS.STATUS_WRONG_ANSWER,
@@ -168,7 +210,7 @@ const checkers: Record<string, Checker> = new Proxy({
         return {
             status: st,
             score: (status === STATUS.STATUS_ACCEPTED) ? config.score : 0,
-            message: stdout,
+            message: config.detail === 'full' ? stdout : '',
         };
     },
 
@@ -176,36 +218,37 @@ const checkers: Record<string, Checker> = new Proxy({
      * input：输入
      * user_out：选手输出
      * answer：标准输出
-     * code：选手代码 (not impl)
+     * code：选手代码
      * stdout：输出最终得分
      * stderr：输出错误报告
      */
     async syzoj(config) {
-        // eslint-disable-next-line prefer-const
         let { status, stdout, stderr } = await runQueued(config.execute, {
             copyIn: {
                 input: config.input,
                 user_out: config.user_stdout,
                 answer: config.output,
-                code: { content: '' },
+                code: config.code,
                 ...config.copyIn,
             },
         });
         if (status !== STATUS.STATUS_ACCEPTED) throw new SystemError('Checker returned {0}.', [status]);
         const score = +stdout;
         status = score === 100 ? STATUS.STATUS_ACCEPTED : STATUS.STATUS_WRONG_ANSWER;
-        return { status, score: Math.floor((score * config.score) / 100), message: stderr };
+        return { status, score: Math.floor((score * config.score) / 100), message: config.detail === 'full' ? stderr : '' };
     },
 
     async testlib(config) {
-        const { stderr, status, code } = await runQueued(`${config.execute} /w/in /w/user_out /w/answer`, {
+        const { stderr, status, code, fileIds, [Symbol.asyncDispose]: dispose } = await runQueued(`${config.execute} /w/in /w/user_out /w/answer`, {
             copyIn: {
                 in: config.input,
                 user_out: config.user_stdout,
                 answer: config.output,
+                user_code: config.code,
                 ...config.copyIn,
             },
             env: config.env,
+            copyOutCached: ['nextpass.in?', 'state.txt?'],
         });
         if ([STATUS.STATUS_SYSTEM_ERROR, STATUS.STATUS_TIME_LIMIT_EXCEEDED, STATUS.STATUS_MEMORY_LIMIT_EXCEEDED].includes(status)) {
             const message = {
@@ -213,6 +256,7 @@ const checkers: Record<string, Checker> = new Proxy({
                 [STATUS.STATUS_TIME_LIMIT_EXCEEDED]: 'Checker Time Limit Exceeded',
                 [STATUS.STATUS_MEMORY_LIMIT_EXCEEDED]: 'Checker Memory Limit Exceeded',
             }[status];
+            dispose();
             return {
                 status: STATUS.STATUS_SYSTEM_ERROR,
                 score: 0,
@@ -220,13 +264,83 @@ const checkers: Record<string, Checker> = new Proxy({
             };
         }
         if (status === STATUS.STATUS_RUNTIME_ERROR && !stderr?.trim()) {
+            dispose();
             return {
                 status: STATUS.STATUS_SYSTEM_ERROR,
                 score: 0,
                 message: `Checker exited with code ${code}`,
             };
         }
-        return parse(stderr, config.score);
+        const result = parse(stderr, config.score, config.detail);
+        if (result.status === STATUS.STATUS_ACCEPTED && fileIds['nextpass.in']) {
+            return {
+                ...result,
+                nextPass: {
+                    input: { fileId: fileIds['nextpass.in'] },
+                    state: fileIds['state.txt'] ? { 'state.txt': { fileId: fileIds['state.txt'] } } : undefined,
+                    dispose,
+                },
+            };
+        }
+        dispose();
+        return result;
+    },
+
+    // https://www.kattis.com/problem-package-format/spec/2023-07-draft.html#output-validator
+    async kattis(config) {
+        const { files, fileIds, code, [Symbol.asyncDispose]: dispose } = await runQueued(`${config.execute} input answer_file feedback_dir`, {
+            copyIn: {
+                input: config.input,
+                answer_file: config.output,
+                'feedback_dir/placeholder': { content: '' },
+                ...config.copyIn,
+            },
+            stdin: config.user_stdout,
+            copyOut: [
+                'feedback_dir/score.txt?',
+                'feedback_dir/judgemessage.txt?',
+                'feedback_dir/teammessage.txt?',
+                'feedback_dir/judgeerror.txt?',
+            ],
+            copyOutCached: [
+                'feedback_dir/nextpass.in?',
+                'feedback_dir/state.txt?',
+            ],
+        });
+
+        const status = code === 42
+            ? STATUS.STATUS_ACCEPTED
+            : code === 43
+                ? STATUS.STATUS_WRONG_ANSWER
+                : STATUS.STATUS_SYSTEM_ERROR;
+
+        const score = status === STATUS.STATUS_ACCEPTED
+            ? config.score
+            : +files['feedback_dir/score.txt'] || 0;
+
+        const message = status === STATUS.STATUS_SYSTEM_ERROR
+            ? files['feedback_dir/judgeerror.txt'] || `Checker exited with code ${code}`
+            : config.detail === 'full'
+                ? files['feedback_dir/teammessage.txt'] || files['feedback_dir/judgemessage.txt'] || ''
+                : '';
+
+        if (status === STATUS.STATUS_ACCEPTED && fileIds['feedback_dir/nextpass.in']) {
+            return {
+                status,
+                score,
+                message,
+                nextPass: {
+                    input: { fileId: fileIds['feedback_dir/nextpass.in'] },
+                    state: fileIds['feedback_dir/state.txt']
+                        ? { 'feedback_dir/state.txt': { fileId: fileIds['feedback_dir/state.txt'] } }
+                        : undefined,
+                    dispose,
+                },
+            };
+        }
+
+        dispose();
+        return { status, score, message };
     },
 }, {
     get(self, key) {

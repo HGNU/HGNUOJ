@@ -3,7 +3,7 @@ import SettingsIcon from '@vscode/codicons/src/icons/settings-gear.svg?react';
 import { Allotment } from 'allotment';
 import $ from 'jquery';
 import _ from 'lodash';
-import type * as monaco from 'monaco-editor';
+import type * as monaco from 'monaco-editor/editor';
 import React from 'react';
 import { useDispatch, useSelector, useStore } from 'react-redux';
 import Dom from 'vj/components/react/DomComponent';
@@ -28,7 +28,7 @@ const pages = {
 let rerenderCallback = null;
 class ScratchpadService extends Service {
   constructor(public store) {
-    super(ctx, 'scratchpad', true);
+    super(ctx, 'scratchpad');
     this.load = new Promise((resolve) => {
       this.loadCallback = resolve;
     });
@@ -38,9 +38,9 @@ class ScratchpadService extends Service {
   load: Promise<void>;
   loadCallback: () => void;
   editor: monaco.editor.IStandaloneCodeEditor;
-  monaco: typeof import('monaco-editor');
+  monaco: typeof import('monaco-editor/editor');
 
-  init(editor: monaco.editor.IStandaloneCodeEditor, monaco: typeof import('monaco-editor')) {
+  init(editor: monaco.editor.IStandaloneCodeEditor, monaco: typeof import('monaco-editor/editor')) {
     this.editor = editor;
     this.monaco = monaco;
     this.loadCallback();
@@ -54,16 +54,17 @@ class ScratchpadService extends Service {
     rerenderCallback?.();
   }
 }
-declare module '../../context' {
+declare module 'cordis' {
   interface Context {
     scratchpad: ScratchpadService;
   }
 }
 
+let scratchpad: ScratchpadService;
+
 export default function ScratchpadContainer() {
   const store = useStore();
-  ctx.provide('scratchpad');
-  ctx.scratchpad ||= new ScratchpadService(store);
+  scratchpad ||= new ScratchpadService(store);
   const [, updateState] = React.useState<any>();
   const forceUpdate = React.useCallback(() => updateState({}), []);
   React.useEffect(() => {

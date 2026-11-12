@@ -1,6 +1,11 @@
+/* eslint-disable react-refresh/only-export-components */
 import $ from 'jquery';
 import React from 'react';
+import ReactDOM from 'react-dom/client';
+import Notification from 'vj/components/notification';
 import { i18n, tpl } from 'vj/utils';
+import DomainSelectAutoComplete from '../autocomplete/components/DomainSelectAutoComplete';
+import UserSelectAutoComplete from '../autocomplete/components/UserSelectAutoComplete';
 import DomDialog, { DialogOptions } from './DomDialog';
 
 export class Dialog {
@@ -108,7 +113,173 @@ export class ConfirmDialog extends Dialog {
   }
 }
 
-window.Hydro.components.Dialog = Dialog;
-window.Hydro.components.InfoDialog = InfoDialog;
-window.Hydro.components.ActionDialog = ActionDialog;
-window.Hydro.components.ConfirmDialog = ConfirmDialog;
+export interface Field {
+  type: 'text' | 'textarea' | 'checkbox' | 'user' | 'userId' | 'username' | 'domain';
+  options?: string[] | Record<string, string>;
+  placeholder?: string;
+  label?: string;
+  autofocus?: boolean;
+  required?: boolean;
+  default?: string;
+  columns?: number;
+  rows?: number;
+  multi?: boolean;
+}
+
+type Result<T extends string, R extends Record<T, Field>> = {
+  [K in keyof R]: R[K]['type'] extends ('text' | 'password' | 'username' | 'domain' | 'textarea') ? string
+    : R[K]['type'] extends 'checkbox' ? boolean
+      : R[K]['type'] extends 'userId' ? number
+        : R[K]['type'] extends 'user' ? any
+          : never;
+};
+
+interface PromptOptions {
+  cancelByClickingBack: boolean;
+  cancelByEsc: boolean;
+}
+
+export async function prompt<T extends string, R extends Record<T, Field>>(title: string, fields: R, options?: PromptOptions): Promise<Result<T, R>> {
+  let valueCache: Result<T, R> = {} as any;
+  const defaultValues = Object.fromEntries(Object.entries(fields)
+    .map(([name, field]: [T, Field]) => {
+      let firstOption = '';
+      if (field.options) {
+        if (Array.isArray(field.options)) firstOption = field.options[0];
+        else firstOption = Object.keys(field.options)[0];
+      }
+      return [name, field.default || firstOption || ''];
+    })) as Result<T, R>;
+
+  const layout: [string, Field][][] = [];
+  let pending: [string, Field][] = [];
+  for (const [name, field] of Object.entries(fields) as [T, Field][]) {
+    pending.push([name, field]);
+    if ((field.columns || -12) < 0) {
+      layout.push(pending);
+      pending = [];
+    }
+  }
+  if (pending.length > 0) layout.push(pending);
+
+  const Component = () => {
+    const [values, setValues] = React.useState(defaultValues);
+    const [selected, setSelected] = React.useState<Partial<Result<T, R>>>({});
+    const refs = React.useRef<Partial<Record<T, React.RefObject<any>>>>({});
+
+    React.useEffect(() => {
+      valueCache = values;
+    }, [values]);
+
+    return <div>
+      <div className="row"><div className="columns">
+        <h1>{title}</h1>
+      </div></div>
+      {layout.map((i) => <div className="row" key={i[0][0]}>
+        {i.map(([name, field]: [string, Field]) => <div key={name} className={`columns medium-${Math.abs(field.columns || 12)}`}>
+          {field.type === 'textarea' && <label>
+            {field.label}
+            <textarea
+              className="textbox"
+              rows={field.rows || 6}
+              placeholder={field.placeholder}
+              defaultValue={field.default}
+              data-autofocus={field.autofocus}
+              style={{ fontFamily: 'monospace' }}
+              onChange={(e) => setValues({ ...values, [name]: e.target.value })}
+            />
+          </label>}
+          {['text', 'user', 'userId', 'username', 'domain'].includes(field.type) && <label>
+            {field.label}
+            <div className="textbox-container">
+              {['text', 'password'].includes(field.type) && (field.options
+                ? <select
+                  defaultValue={field.default}
+                  className="select"
+                  data-autofocus={field.autofocus}
+                  onChange={(e) => setValues({ ...values, [name]: e.target.value })}
+                >
+                  {Object.entries(field.options).map(([value, label]) => (
+                    <option value={Array.isArray(field.options) ? label : value} key={value}>{label}</option>
+                  ))}
+                </select>
+                : <input
+                  type={field.type}
+                  className="textbox"
+                  data-autofocus={field.autofocus}
+                  defaultValue={field.default}
+                  onChange={(e) => setValues({ ...values, [name]: e.target.value })}
+                />)}
+              {['userId', 'username', 'user'].includes(field.type) && <UserSelectAutoComplete
+                data-autofocus={field.autofocus}
+                multi={field.multi}
+                ref={(el) => { refs.current[name] = el; }}
+                selectedKeys={selected[name]
+                  ? (field.multi
+                    ? String(selected[name]).split(',').filter(Boolean)
+                    : [selected[name].toString()])
+                  : []}
+                onChange={(e) => {
+                  if (field.multi && e === selected[name]) return;
+                  const items = refs.current[name].getSelectedItems();
+                  const extract = (v) => (field.type === 'username' ? v?.uname : field.type === 'userId' ? v?._id : v);
+                  setValues({ ...values, [name]: field.multi ? items.map(extract) : extract(items[0]) });
+                  setSelected({ ...selected, [name]: e });
+                }}
+              />}
+              {field.type === 'domain' && <DomainSelectAutoComplete
+                data-autofocus={field.autofocus}
+                selectedKeys={values[name] ? [values[name]] : []}
+                onChange={(e) => setValues({ ...values, [name]: e })}
+              />}
+            </div>
+          </label>}
+          {field.type === 'checkbox' && <label className="checkbox">
+            <input
+              type="checkbox"
+              defaultChecked={field.default === 'true'}
+              onChange={(e) => setValues({ ...values, [name]: !!e.target.checked })}
+            />
+            {field.label}
+          </label>}
+        </div>)}</div>)}
+    </div>;
+  };
+  const div = document.createElement('div');
+  const root = ReactDOM.createRoot(div);
+  root.render(<Component />);
+  const res = await new Dialog({
+    $body: $(div),
+    $action: [buttonCancel, buttonOk].join('\n'),
+    cancelByClickingBack: options?.cancelByClickingBack ?? false,
+    cancelByEsc: options?.cancelByEsc ?? false,
+    onDispatch(action) {
+      if (action === 'ok') {
+        for (const [name, field] of Object.entries(fields) as [string, Field][]) {
+          if ((field as any).required && !valueCache[name]) {
+            console.log('missing ', name);
+            Notification.error(i18n('{0} is required', field.label || name));
+            return false;
+          }
+        }
+      }
+      return true;
+    },
+  }).open();
+  root.unmount();
+  if (res !== 'ok') return null;
+  return valueCache;
+}
+
+export async function confirm(text: string) {
+  const res = await new ConfirmDialog({
+    $body: tpl.typoMsg(text),
+  }).open();
+  return res === 'yes';
+}
+
+export async function alert(text: string) {
+  return await new InfoDialog({
+    $body: tpl.typoMsg(text),
+  }).open();
+}

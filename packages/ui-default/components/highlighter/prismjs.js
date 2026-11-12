@@ -66,20 +66,21 @@ const invisibles = {
 function addInvisibles(grammar) {
   if (!grammar || grammar.tab) return;
   for (const name in invisibles) {
-    if (Object.prototype.hasOwnProperty.call(invisibles, name)) {
+    if (Object.hasOwn(invisibles, name)) {
       grammar[name] = invisibles[name];
     }
   }
   for (const name in grammar) {
-    if (Object.prototype.hasOwnProperty.call(grammar, name) && !invisibles[name]) {
+    if (Object.hasOwn(grammar, name) && !invisibles[name]) {
       if (name === 'rest') addInvisibles(grammar.rest);
-      else handlerInvisiblesToken(grammar, name); // eslint-disable-line @typescript-eslint/no-use-before-define
+      else handlerInvisiblesToken(grammar, name); // eslint-disable-line ts/no-use-before-define
     }
   }
 }
 
 function handlerInvisiblesToken(tokens, name) {
   const value = tokens[name];
+  if (!value) return;
   const type = Prism.util.type(value);
   if (type === 'RegExp') {
     const inside = {};

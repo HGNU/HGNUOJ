@@ -59,7 +59,7 @@
         <h1 class="section__title">{{ _('All Contests') if not rule else _('All {0} Contests').format(_(model.contest.RULES[rule].TEXT)) }}</h1>
         <div class="section__tools">
           <form method="get" name="filter-form">
-            {{ _('Show') }}:
+            <input type="text" class="inline compact textbox" name="q" value="{{ q }}" placeholder="{{ _('Search contests...') }}">
             <select class="inline compact select" name="group">
               <option value=""{% if not group %} selected{% endif %}>{{ _('All') }}</option>
               {%- for g in groups -%}
@@ -138,6 +138,18 @@
       </div>
       <div class="section__body">
         <p><a href="{{ url('contest_create') }}" class="expanded primary button">{{ _('Create a contest') }}</a></p>
+      </div>
+    </div>
+  {% endif %}
+  {% if handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}
+    <div class="section side">
+      <div class="section__header">
+        <h1 class="section__title">
+          {{ _('My Teams') }}
+        </h1>
+      </div>
+      <div class="section__body">
+        <p><a href="{{ url('contest_team') }}" class="expanded button"><span class="icon icon-user--multiple"></span> {{ _('Manage Teams') }}</a></p>
       </div>
     </div>
   {% endif %}

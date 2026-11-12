@@ -1,7 +1,7 @@
 import { parseMemoryMB, parseTimeMS, sortFiles } from '@hydrooj/utils/lib/common';
-import Ajv from 'ajv';
 import type { ProblemConfigFile, TestCaseConfig } from 'hydrooj/src/interface';
-import yaml from 'js-yaml';
+import Ajv from 'ajv';
+import * as yaml from 'js-yaml';
 import { cloneDeep } from 'lodash';
 import schema from '../../monaco/schema/problemconfig';
 
@@ -21,7 +21,7 @@ export default function reducer(state = {
     case 'CONFIG_LOAD_FULFILLED': {
       const c = { ...state, __loaded: true };
       try {
-        let data = yaml.load(action.payload.config) as any;
+        let data = yaml.load(action.payload.config || '{}') as any;
         if (typeof data !== 'object') data = { subtasks: [] };
         else data.subtasks ||= [];
         if (!validate(data)) {
@@ -51,7 +51,7 @@ export default function reducer(state = {
       const next = { ...state, [action.key]: action.value };
       if (action.key === 'score' && action.value) next.score = +next.score;
       if (action.key === 'checker_type' && action.value === 'other') next.checker_type = 'syzoj';
-      if (!action.value || (typeof action.value === 'object' && !action.value.join(''))) delete next[action.key];
+      if (!action.value || (action.value instanceof Array && !action.value.join(''))) delete next[action.key];
       return next;
     }
     case 'CONFIG_CODE_UPDATE': {
@@ -138,17 +138,21 @@ export default function reducer(state = {
     case 'problemconfig/moveTestcases': {
       const testcases = action.payload.cases;
       const subtasks = cloneDeep(state.subtasks);
+      const targetCases = action.payload.target === -1
+        ? state.__cases
+        : (subtasks.find((s) => s.id === action.payload.target)?.cases || []);
+      const toAdd = testcases.filter((tc) => !targetCases.find((j) => j.input === tc.input && j.output === tc.output));
       const __cases = action.payload.source === -1
         ? state.__cases.filter((i) => !testcases.find((j) => i.input === j.input && i.output === j.output))
         : action.payload.target === -1
-          ? sortFiles([...state.__cases, ...testcases], 'input')
+          ? sortFiles([...state.__cases, ...toAdd], 'input')
           : state.__cases;
       for (const key in subtasks) {
         const subtask = subtasks[key];
         if (subtask.id === action.payload.source) {
           subtask.cases = subtask.cases.filter((i) => !testcases.find((j) => i.input === j.input && i.output === j.output));
         } else if (subtask.id === action.payload.target) {
-          subtask.cases = sortFiles([...subtask.cases, ...testcases], 'input');
+          subtask.cases = sortFiles([...subtask.cases, ...toAdd], 'input');
         }
       }
       return { ...state, subtasks, __cases };
@@ -158,8 +162,10 @@ export default function reducer(state = {
       return { ...state, __cases: state.__cases.filter((i) => !testcases.find((j) => i.input === j.input && i.output === j.output)) };
     }
     case 'problemconfig/deleteSubtask': {
+      const currentCases = state.subtasks.find((i) => i.id === action.id)?.cases || [];
       const subtasks = state.subtasks.filter((i) => i.id !== action.id);
-      return { ...state, subtasks };
+      const add = currentCases.filter((i) => !subtasks.find((j) => j.cases.find((k) => k.input === i.input && k.output === i.output)));
+      return { ...state, subtasks, __cases: sortFiles([...state.__cases, ...add], 'input') };
     }
     default:
       return state;

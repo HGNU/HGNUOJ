@@ -26,6 +26,9 @@
       {% if not handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}
         <li class="menu__item"><a class="menu__link" href="javascript:showSignInDialog();">
         <span class="icon icon-add"></span> {{ _('Login to Create a Discussion') }}</a></li>
+      {% elif not handler.user._dudoc.join %}
+        <li class="menu__item"><a class="menu__link" href="/domain/join?target={{ tdoc.domainId }}">
+        <span class="icon icon-add"></span> {{ _('Join Domain to Create a Discussion') }}</a></li>
       {% else %}
         <li class="menu__item"><a class="menu__link disabled" href="javascript:;">
         <span class="icon icon-add"></span> {{ _('No Permission to Create a Discussion') }}</a></li>
@@ -41,15 +44,68 @@
     {% if not (tsdoc.attend) and not model.contest.isDone(tdoc) %}
       <li class="menu__item">
     {% if handler.user.hasPerm(perm.PERM_ATTEND_CONTEST) and handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}
-      <form action="{{ url('contest_detail', tid=tdoc.docId) }}" method="POST">
+      {% set team_vdocs = team_vdocs|default([]) %}
+      <form action="{{ url('contest_detail', tid=tdoc.docId) }}" method="POST" data-contest-attend-form{% if tdoc.allowTeam or tdoc._code %} data-contest-needs-dialog{% endif %}>
         <input type="hidden" name="operation" value="attend">
-        <button class="menu__link" {% if tdoc._code %}data-contest-code{% endif %} type="submit">
+        <button class="menu__link" data-contest-attend type="submit">
           <span class="icon icon-add"></span> {{ _('Attend Contest') }}
         </button>
       </form>
+      <div style="display:none" class="dialog__body--contest-attend">
+        <div>
+          <div class="row"><div class="columns">
+            <h1>{{ _('Attend Contest') }}</h1>
+            <p class="supplementary contest-attend-dialog__desc">{{ _('Choose how you want to participate in this contest.') }}</p>
+          </div></div>
+          <input type="hidden" name="contest_attend_mode" value="personal">
+          <div class="contest-attend-dialog__modes">
+            <button type="button" class="primary rounded button" data-contest-attend-mode="personal" aria-pressed="true">
+              <span class="icon icon-user"></span> {{ _('Personal Participation') }}
+            </button>
+            <button type="button" class="rounded button{% if not tdoc.allowTeam %} disabled{% endif %}" data-contest-attend-mode="team" aria-pressed="false"{% if teamDisabled %} disabled{% endif %}>
+              <span class="icon icon-user--multiple"></span> {{ _('Team Participation') }}
+            </button>
+          </div>
+          {% if not tdoc.allowTeam %}
+          <p class="supplementary contest-attend-dialog__hint">{{ _('Team participation is not allowed for this contest.') }}</p>
+          {% elif not team_vdocs.length %}
+          <p class="supplementary contest-attend-dialog__hint">
+            {{ _('You are not in any team.') }}
+            <a class="typo-a" href="{{ url('contest_team') }}">{{ _('Manage Teams') }}</a>
+          </p>
+          {% endif %}
+          {% if team_vdocs.length %}
+          <div class="row contest-attend-dialog__team-select"><div class="columns">
+            <label>
+              {{ _('Team') }}
+              <select class="select" name="contest_attend_vuid" disabled>
+                {% for v in team_vdocs %}
+                <option value="{{ v._id }}">{{ v.displayName }} (ID {{ v._id }})</option>
+                {% endfor %}
+              </select>
+            </label>
+          </div></div>
+          <p class="supplementary contest-attend-dialog__hint">
+            <a class="typo-a" href="{{ url('contest_team') }}">{{ _('Manage Teams') }}</a>
+          </p>
+          {% endif %}
+          {% if tdoc._code %}
+          <div class="row"><div class="columns">
+            <label class="material textbox">
+              {{ _('Invitation code') }}
+              <input name="contest_attend_code" type="text" data-autofocus>
+            </label>
+          </div></div>
+          {% endif %}
+        </div>
+      </div>
     {% elif not handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}
         <a class="menu__link" href="javascript:showSignInDialog()">
           <span class="icon icon-add"></span> {{ _('Login to Attend Contest') }}
+        </a>
+    {% elif not handler.user._dudoc.join %}
+        <a class="menu__link" href="/domain/join?target={{ tdoc.domainId }}">
+          <span class="icon icon-add"></span> {{ _('Join Domain to Attend Contest') }}
         </a>
     {% else %}
         <a class="menu__link disabled" href="javascript:;">
@@ -57,6 +113,20 @@
         </a>
     {% endif %}
       </li>
+    {% else %}
+      <li class="menu__item"><a class="menu__link" href="{{ url('contest_problemlist', tid=tdoc.docId) }}">
+        <span class="icon icon-unordered_list"></span> {{ _('Problem List') }}
+      </a></li>
+      {% if page_name == 'contest_detail' and tsdoc.attend and model.contest.isOngoing(tdoc, tsdoc) and tdoc.rule !== 'homework' %}
+      <li class="menu__item">
+        <form action="{{ url('contest_detail', tid=tdoc.docId) }}" method="POST" onsubmit='return confirm({{ _("Confirm end contest early? You will not be able to submit after this.")|json|safe }});'>
+          <input type="hidden" name="operation" value="early_end">
+          <button class="menu__link" type="submit">
+            <span class="icon icon-delete"></span> {{ _('End Contest Early') }}
+          </button>
+        </form>
+      </li>
+      {% endif %}
     {% endif %}{# not attend and not done #}
     {% if model.contest.canShowScoreboard.call(handler, tdoc, False) %}
       <li class="menu__item"><a class="menu__link" href="{{ url('contest_scoreboard', tid=tdoc.docId) }}">
@@ -65,6 +135,11 @@
     {% elif model.contest.canViewHiddenScoreboard.call(handler, tdoc) %}
       <li class="menu__item"><a class="menu__link" href="{{ url('contest_scoreboard', tid=tdoc.docId) }}">
         <span class="icon icon-statistics"></span> {{ _('Scoreboard (Hidden)') }}
+      </a></li>
+    {% endif %}
+    {% if tdoc.allowPrint and (tsdoc.attend or handler.user.own(tdoc) or handler.user.hasPerm(perm.PERM_EDIT_CONTEST)) %}
+      <li class="menu__item"><a class="menu__link" href="{{ url('contest_print', tid=tdoc.docId) }}">
+        <span class="icon icon-print"></span> {{ _('Print') }}
       </a></li>
     {% endif %}
     {% if handler.user.own(tdoc) or handler.user.hasPerm(perm.PERM_EDIT_CONTEST) %}
@@ -82,9 +157,16 @@
         </a></li>
       {% endif %}
     {% endif %}
+    {% if handler.user.own(tdoc) or handler.user.hasPriv(PRIV.PRIV_READ_RECORD_CODE) or handler.user.hasPerm(perm.PERM_READ_RECORD_CODE) %}
       <li class="menu__item"><a class="menu__link" href="{{ url('record_main', query={tid:tdoc.docId}) }}">
         <span class="icon icon-flag"></span> {{ _('All Submissions') }}
       </a></li>
+    {% endif %}
+    {% if tsdoc.attend and model.contest.canShowSelfRecord.call(handler, tdoc) %}
+      <li class="menu__item"><a class="menu__link" href="{{ url('record_main', query={tid:tdoc.docId, uidOrName:handler.user._id}) }}">
+        <span class="icon icon-flag"></span> {{ _('My Submissions') }}
+      </a></li>
+    {% endif %}
       <li class="menu__item"><a class="menu__link" href="{{ url('wiki_help', anchor='contest') }}">
         <span class="icon icon-help"></span> {{ _('Help') }}
       </a></li>

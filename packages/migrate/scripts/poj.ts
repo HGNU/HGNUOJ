@@ -1,5 +1,6 @@
-/* eslint-disable no-tabs */
 /* eslint-disable no-await-in-loop */
+/* eslint-disable style/no-tabs */
+
 import path from 'path';
 import zlib from 'zlib';
 import mariadb from 'mariadb';
@@ -34,7 +35,7 @@ export async function run({
     host = 'localhost', port = 3306, name,
     username, password, domainId, contestType = 'oi',
     dataDir, imageDir, rerun = true, randomMail = false,
-}, report: Function) {
+}, report: (data: any) => void) {
     const src = await mariadb.createConnection({
         host,
         port,
@@ -150,6 +151,7 @@ export async function run({
                     hint: pdoc.hint,
                     source: pdoc.source,
                 }, 'html');
+                // eslint-disable-next-line regexp/no-super-linear-backtracking
                 const uploadFiles = content.matchAll(/(?:src|href)="\/images\/([^"]+\/([^"]+))"/g);
                 for (const file of uploadFiles) {
                     try {
@@ -159,9 +161,10 @@ export async function run({
                         report({ message: `failed to read file: ${path.join(imageDir, file[1])}` });
                     }
                 }
+                const lang = SystemModel.get('server.language') || 'zh';
                 const pid = await ProblemModel.add(
                     domainId, `P${pdoc.problem_id}`,
-                    pdoc.title, content,
+                    pdoc.title, JSON.stringify([{ name: `problem_${lang}.html`, lang, content }]),
                     1, pdoc.source?.trim().length ? pdoc.source.split(' ').map((i) => i.trim()).filter((i) => i) : [],
                     { hidden: pdoc.defunct === 'Y' },
                 );
@@ -175,7 +178,6 @@ export async function run({
                 config: `time: ${pdoc.time_limit}ms
 memory: ${pdoc.memory_limit}k`,
                 owner: 1,
-                html: true,
             });
             if (pdoc.sample_Program) {
                 await SolutionModel.add(domainId, pidMap[pdoc.problem_id], 1, pdoc.sample_Program);

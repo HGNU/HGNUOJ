@@ -1,8 +1,12 @@
-import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
+import * as monaco from 'monaco-editor/editor';
+import { createWebWorker } from 'monaco-editor/internal/common/workers.js';
 import { configureMonacoYaml } from 'monaco-yaml';
 import problemConfigSchema from '../schema/problemconfig';
 
-configureMonacoYaml(monaco, {
+configureMonacoYaml({
+  ...monaco,
+  editor: { ...monaco.editor, createWebWorker },
+} as any, {
   validate: true,
   enableSchemaRequest: true,
   hover: true,

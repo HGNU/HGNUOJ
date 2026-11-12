@@ -8,8 +8,8 @@ proxy(superagent);
 
 interface FetchOptions {
     headers?: { [key: string]: string };
-    post?: Omit<FetchOptions, 'get' | 'post'>
-    get?: Omit<FetchOptions, 'get' | 'post'>
+    post?: Omit<FetchOptions, 'get' | 'post'>;
+    get?: Omit<FetchOptions, 'get' | 'post'>;
 }
 
 const defaultUA = `Hydro/${global.Hydro.version.hydrooj} VJudge/${global.Hydro.version.vjudge}`;
@@ -29,7 +29,7 @@ export class BasicFetcher {
 
     get(url: string) {
         this.logger.debug('get', url);
-        url = new URL(url, this.account.endpoint || this.defaultEndpoint).toString();
+        url = new URL(url, this.endpoint).toString();
         let req = superagent.get(url).set('Cookie', this.cookie).set('User-Agent', this.UA);
         if (this.fetchOptions.headers) req = req.set(this.fetchOptions.headers);
         if (this.fetchOptions.get?.headers) req = req.set(this.fetchOptions.get.headers);
@@ -44,10 +44,10 @@ export class BasicFetcher {
         return $dom.window as DOMWindow & { html: string, headers: any };
     }
 
-    post(url: string) {
+    post(url: string, type = this.formType) {
         this.logger.debug('post', url, this.cookie);
-        url = new URL(url, this.account.endpoint || this.defaultEndpoint).toString();
-        let req = superagent.post(url).set('Cookie', this.cookie).set('User-Agent', this.UA).type(this.formType);
+        url = new URL(url, this.endpoint).toString();
+        let req = superagent.post(url).set('Cookie', this.cookie).set('User-Agent', this.UA).type(type);
         if (this.fetchOptions.headers) req = req.set(this.fetchOptions.headers);
         if (this.fetchOptions.post?.headers) req = req.set(this.fetchOptions.post.headers);
         return this.account.proxy ? req.proxy(this.account.proxy) : req;
@@ -60,7 +60,11 @@ export class BasicFetcher {
         return null;
     }
 
-    setEndpoint(endpoint: string) {
+    get endpoint() {
+        return this.account.endpoint || this.defaultEndpoint;
+    }
+
+    set endpoint(endpoint: string) {
         this.defaultEndpoint = endpoint;
     }
 }

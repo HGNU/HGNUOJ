@@ -1,17 +1,21 @@
 /* eslint-disable max-len */
 /* eslint-disable no-await-in-loop */
-import * as cordis from 'cordis';
-import yaml from 'js-yaml';
+import fs from 'fs';
+import saslPrep from '@mongodb-js/saslprep';
+import * as yaml from 'js-yaml';
 import { Dictionary } from 'lodash';
 import moment from 'moment-timezone';
-import { LangConfig, parseLang } from '@hydrooj/utils/lib/lang';
-import { retry } from '@hydrooj/utils/lib/utils';
+import Schema from 'schemastery';
+import { LangConfig, parseLang } from '@hydrooj/common';
+import { findFileSync, randomstring } from '@hydrooj/utils';
 import { Context, Service } from '../context';
 import { Setting as _Setting } from '../interface';
 import { Logger } from '../logger';
 import * as builtin from './builtin';
 
 type SettingDict = Dictionary<_Setting>;
+
+const settingFile = yaml.load(fs.readFileSync(findFileSync('hydrooj/setting.yaml'), 'utf-8')) as any;
 
 const logger = new Logger('model/setting');
 const countries = moment.tz.countries();
@@ -20,17 +24,15 @@ for (const country of countries) {
     const tz = moment.tz.zonesForCountry(country);
     for (const t of tz) tzs.add(t);
 }
-const timezones = Array.from(tzs).sort().map((tz) => [tz, tz]) as [string, string][];
+const timezones = [...tzs].sort().map((tz) => [tz, tz]) as [string, string][];
 const langRange: Dictionary<string> = {};
-
-for (const lang in global.Hydro.locales) {
-    langRange[lang] = global.Hydro.locales[lang].__langname;
-}
 
 export const FLAG_HIDDEN = 1;
 export const FLAG_DISABLED = 2;
 export const FLAG_SECRET = 4;
 export const FLAG_PRO = 8;
+export const FLAG_PUBLIC = 16;
+export const FLAG_PRIVATE = 32;
 
 export const PREFERENCE_SETTINGS: _Setting[] = [];
 export const ACCOUNT_SETTINGS: _Setting[] = [];
@@ -43,7 +45,6 @@ export const DOMAIN_USER_SETTINGS_BY_KEY: SettingDict = {};
 export const DOMAIN_SETTINGS_BY_KEY: SettingDict = {};
 export const SYSTEM_SETTINGS_BY_KEY: SettingDict = {};
 
-// eslint-disable-next-line max-len
 export type SettingType = 'text' | 'yaml' | 'number' | 'float' | 'markdown' | 'password' | 'boolean' | 'textarea' | [string, string][] | Record<string, string> | 'json';
 
 type Validator = (value: any) => boolean;
@@ -51,7 +52,7 @@ type Validator = (value: any) => boolean;
 export const Setting = (
     family: string, key: string, value: any = null,
     type: SettingType = 'text', name = '', desc = '', flag = 0,
-    validator?: Validator,
+    validation?: (val: any) => boolean,
 ): _Setting => {
     let subType = '';
     if (type === 'yaml' && typeof value !== 'string') {
@@ -69,11 +70,74 @@ export const Setting = (
         subType,
         type: typeof type === 'object' ? 'select' : type,
         range: typeof type === 'object' ? type : null,
-        validator,
+        validation,
     };
 };
 
-export const PreferenceSetting = (...settings: _Setting[]) => {
+declare global {
+    namespace Schemastery {
+        interface Meta<T> { // eslint-disable-line ts/no-unused-vars
+            family?: string;
+            secret?: boolean;
+            flag?: number;
+        }
+    }
+}
+
+function schemaToSettings(schema: Schema<any>) {
+    const result: _Setting[] = [];
+    const processNode = (key: string, s: Schema<number> | Schema<string> | Schema<boolean>, defaultFamily = 'setting_basic') => {
+        if (s.dict) throw new Error('Dict is not supported here');
+        let flag = (s.meta?.hidden ? FLAG_HIDDEN : 0)
+            | (s.meta?.disabled ? FLAG_DISABLED : 0);
+        const actualType = s.type === 'transform' ? s.inner.type : s.type;
+        const actualList = s.type === 'transform' ? s.inner.list : s.list;
+        const type = actualType === 'any' ? 'json'
+            : actualType === 'number' ? 'number'
+                : actualType === 'boolean' ? 'boolean'
+                    : s.meta?.role === 'markdown' ? 'markdown'
+                        : s.meta?.role === 'textarea' ? 'textarea' : 'text';
+        if (s.meta?.role === 'password') flag |= FLAG_SECRET;
+        if (s.meta?.flag) flag |= s.meta?.flag;
+        const options = {};
+        for (const item of actualList || []) {
+            if (item.type !== 'const') throw new Error(`List item must be a constant, got ${item.type}`);
+            options[item.value] = item.meta?.description || item.value;
+        }
+        return {
+            family: s.meta?.family || defaultFamily,
+            key,
+            value: s.meta?.default,
+            name: key,
+            desc: s.meta?.description,
+            flag,
+            subType: '',
+            type: actualList ? 'select' : type,
+            range: actualList ? options : null,
+            validation: (v) => {
+                try {
+                    (s as any)(v);
+                    return true;
+                } catch (e) {
+                    return false;
+                }
+            },
+        } as _Setting;
+    };
+    if (!schema.dict) return [];
+    for (const key in schema.dict) {
+        const value = schema.dict[key];
+        if (value.dict) {
+            for (const subkey in value.dict) {
+                result.push(processNode(`${key}.${subkey}`, value.dict[subkey], value.meta?.family));
+            }
+        } else result.push(processNode(key, value));
+    }
+    return result;
+}
+
+export const PreferenceSetting = (...settings: _Setting[] | Schema<any>[]) => {
+    settings = settings.flatMap((s) => (s instanceof Schema ? schemaToSettings(s) : s) as _Setting[]);
     for (const setting of settings) {
         if (PREFERENCE_SETTINGS.find((s) => s.key === setting.key)) logger.warn(`Duplicate setting key: ${setting.key}`);
         PREFERENCE_SETTINGS.push(setting);
@@ -92,7 +156,8 @@ export const PreferenceSetting = (...settings: _Setting[]) => {
         }
     };
 };
-export const AccountSetting = (...settings: _Setting[]) => {
+export const AccountSetting = (...settings: _Setting[] | Schema<any>[]) => {
+    settings = settings.flatMap((s) => (s instanceof Schema ? schemaToSettings(s) : s) as _Setting[]);
     for (const setting of settings) {
         if (ACCOUNT_SETTINGS.find((s) => s.key === setting.key)) logger.warn(`Duplicate setting key: ${setting.key}`);
         ACCOUNT_SETTINGS.push(setting);
@@ -111,7 +176,8 @@ export const AccountSetting = (...settings: _Setting[]) => {
         }
     };
 };
-export const DomainUserSetting = (...settings: _Setting[]) => {
+export const DomainUserSetting = (...settings: _Setting[] | Schema<any>[]) => {
+    settings = settings.flatMap((s) => (s instanceof Schema ? schemaToSettings(s) : s) as _Setting[]);
     for (const setting of settings) {
         if (DOMAIN_USER_SETTINGS.find((s) => s.key === setting.key)) logger.warn(`Duplicate setting key: ${setting.key}`);
         DOMAIN_USER_SETTINGS.push(setting);
@@ -126,7 +192,8 @@ export const DomainUserSetting = (...settings: _Setting[]) => {
         }
     };
 };
-export const DomainSetting = (...settings: _Setting[]) => {
+export const DomainSetting = (...settings: _Setting[] | Schema<any>[]) => {
+    settings = settings.flatMap((s) => (s instanceof Schema ? schemaToSettings(s) : s) as _Setting[]);
     for (const setting of settings) {
         if (DOMAIN_SETTINGS.find((s) => s.key === setting.key)) logger.warn(`Duplicate setting key: ${setting.key}`);
         DOMAIN_SETTINGS.push(setting);
@@ -141,7 +208,8 @@ export const DomainSetting = (...settings: _Setting[]) => {
         }
     };
 };
-export const SystemSetting = (...settings: _Setting[]) => {
+export const SystemSetting = (...settings: _Setting[] | Schema<any>[]) => {
+    settings = settings.flatMap((s) => (s instanceof Schema ? schemaToSettings(s) : s) as _Setting[]);
     for (const setting of settings) {
         if (SYSTEM_SETTINGS.find((s) => s.key === setting.key)) logger.warn(`Duplicate setting key: ${setting.key}`);
         SYSTEM_SETTINGS.push(setting);
@@ -190,21 +258,21 @@ PreferenceSetting(
 
 AccountSetting(
     Setting('setting_student', 'stuid', '', 'text', 'Stu_ID',
-        '', FLAG_DISABLED, (s) => /^2\d{7}$|2\d{12}$/.test(s)),
+        '', FLAG_DISABLED | FLAG_PUBLIC, (s) => /^2(?:\d{7}|\d{12})$/.test(s)),
     Setting('setting_student', 'name', '', 'text', 'Stu_RealName',
-        '', FLAG_DISABLED, (s) => /^[\u4E00-\u9FA5]{2,4}$/.test(s)),
+        '', FLAG_DISABLED | FLAG_PUBLIC, (s) => /^[\u4E00-\u9FA5]{2,4}$/.test(s)),
     Setting('setting_student', 'class', null, 'text', 'Stu_ClassName',
-        '', undefined, (s) => /^[\u4E00-\u9FA5]{2,4}[1-2][0-9]{3}$/.test(s)),
+        '', FLAG_PUBLIC, (s) => /^[\u4E00-\u9FA5]{2,4}[1-2][0-9]{3}$/.test(s)),
     Setting('setting_info', 'avatar', '', 'text', 'Avatar',
         'Allow using gravatar:email qq:id github:name url:link format.'),
     Setting('setting_info', 'qq', null, 'text', 'QQ'),
     Setting('setting_info', 'gender', builtin.USER_GENDER_OTHER, builtin.USER_GENDER_RANGE, 'Gender'),
-    Setting('setting_info', 'phone', null, 'text', 'Phone', null, FLAG_DISABLED),
+    Setting('setting_info', 'phone', null, 'text', 'Phone', null, FLAG_DISABLED | FLAG_PRIVATE),
     Setting('setting_customize', 'backgroundImage',
         '/components/profile/backgrounds/1.jpg', 'text', 'Profile Background Image',
         'Choose the background image in your profile page.', FLAG_DISABLED),
     Setting('setting_storage', 'unreadMsg', 0, 'number', 'Unread Message Count', null, FLAG_DISABLED | FLAG_HIDDEN),
-    Setting('setting_storage', 'badge', '', 'text', 'badge info', null, FLAG_DISABLED | FLAG_HIDDEN),
+    Setting('setting_storage', 'badge', '', 'text', 'badge info', null, FLAG_DISABLED | FLAG_HIDDEN | FLAG_PUBLIC),
     Setting('setting_storage', 'banReason', '', 'text', 'ban reason', null, FLAG_DISABLED | FLAG_HIDDEN),
     Setting('setting_storage', 'pinnedDomains', [], 'json', 'pinned domains', null, FLAG_DISABLED | FLAG_HIDDEN),
 );
@@ -218,17 +286,17 @@ DomainSetting(
     Setting('setting_storage', 'host', '', 'text', 'Custom host', null, FLAG_HIDDEN | FLAG_DISABLED),
 );
 
-DomainUserSetting(
-    Setting('setting_info', 'displayName', '', 'text', 'Display Name'),
-    Setting('setting_storage', 'nAccept', 0, 'number', 'nAccept', null, FLAG_HIDDEN | FLAG_DISABLED),
-    Setting('setting_storage', 'nSubmit', 0, 'number', 'nSubmit', null, FLAG_HIDDEN | FLAG_DISABLED),
-    Setting('setting_storage', 'nLike', 0, 'number', 'nLike', null, FLAG_HIDDEN | FLAG_DISABLED),
-    Setting('setting_storage', 'rp', 0, 'number', 'RP', null, FLAG_HIDDEN | FLAG_DISABLED),
-    Setting('setting_storage', 'rpInfo', {}, 'json', 'RP Detail', null, FLAG_HIDDEN | FLAG_DISABLED),
-    Setting('setting_storage', 'rpdelta', 0, 'number', 'RP.delta', null, FLAG_HIDDEN | FLAG_DISABLED),
-    Setting('setting_storage', 'rank', 0, 'number', 'Rank', null, FLAG_DISABLED | FLAG_HIDDEN),
-    Setting('setting_storage', 'level', 0, 'number', 'level', null, FLAG_HIDDEN | FLAG_DISABLED),
-);
+DomainUserSetting(Schema.object({
+    displayName: Schema.transform(String, (input) => saslPrep(input)).default('').description('Display Name')
+        .extra('family', 'setting_info').extra('flag', FLAG_PRIVATE),
+
+    rpInfo: Schema.any().extra('family', 'setting_storage').disabled().hidden(),
+
+    ...Object.fromEntries(['nAccept', 'nSubmit', 'nLiked', 'rp', 'rpdelta', 'rank', 'level', 'join'].map((i) => ([
+        i, Schema.number().default(0).extra('family', 'setting_storage').disabled().hidden(),
+    ]))),
+
+}));
 
 const ignoreUA = [
     'bingbot',
@@ -239,30 +307,42 @@ const ignoreUA = [
     'YandexBot',
 ].join('\n');
 
+// This is a showcase of how to use Schema to define settings.
+SystemSetting(Schema.object({
+    smtp: Schema.object({
+        user: Schema.string().default('').description('SMTP Username'),
+        pass: Schema.string().default('').description('SMTP Password').role('password'),
+        host: Schema.string().default('').description('SMTP Server Host'),
+        port: Schema.number().step(1).min(1).max(65535).default(465).description('SMTP Server Port'),
+        from: Schema.string().default('').description('Mail From'),
+        secure: Schema.boolean().default(false).description('SSL'),
+        verify: Schema.boolean().default(true).description('Verify register email'),
+    }).extra('family', 'setting_smtp'),
+    server: Schema.object({
+        allowInvite: Schema.boolean().default(true).description('Allow invite users'),
+        showDefaultRole: Schema.boolean().default(false).description('Show default role users in domain user management'),
+        center: Schema.string().default('https://hydro.ac/center').description('Server Center').role('url').hidden(),
+        name: Schema.string().default('Hydro').description('Server Name'),
+        url: Schema.string().default('/').description('Server BaseURL'),
+        upload: Schema.string().default('256m').description('Max upload file size'),
+        cdn: Schema.string().default('/').description('CDN Prefix'),
+        cdn_dynamic: Schema.boolean().default(false).description('Dynamic CDN'),
+        ws: Schema.string().default('/').description('WebSocket Prefix'),
+        host: Schema.string().default('127.0.0.1').description('Listen host'),
+        port: Schema.number().step(1).min(1).max(65535).default(8888).description('Server Port'),
+        xff: Schema.string().default('').description('IP Header'),
+        xhost: Schema.string().default('').description('Hostname Header'),
+        xproxy: Schema.boolean().default(false).description('Use reverse_proxy'),
+        cors: Schema.string().default('').description('CORS domains'),
+        login: Schema.boolean().default(true).description('Allow builtin-login').hidden(),
+        checkUpdate: Schema.boolean().default(true).description('Daily update check'),
+        ignoreUA: Schema.string().default(ignoreUA).description('ignoredUA').role('textarea'),
+    }).extra('family', 'setting_server'),
+}));
+// We will keep the old settings as-is until new setting ui is ready.
 SystemSetting(
-    Setting('setting_smtp', 'smtp.user', null, 'text', 'smtp.user', 'SMTP Username'),
-    Setting('setting_smtp', 'smtp.pass', null, 'password', 'smtp.pass', 'SMTP Password', FLAG_SECRET),
-    Setting('setting_smtp', 'smtp.host', null, 'text', 'smtp.host', 'SMTP Server Host'),
-    Setting('setting_smtp', 'smtp.port', 465, 'number', 'smtp.port', 'SMTP Server Port'),
-    Setting('setting_smtp', 'smtp.from', null, 'text', 'smtp.from', 'Mail From'),
-    Setting('setting_smtp', 'smtp.secure', false, 'boolean', 'smtp.secure', 'SSL'),
-    Setting('setting_smtp', 'smtp.verify', true, 'boolean', 'smtp.verify', 'Verify register email'),
-    Setting('setting_server', 'server.center', 'https://hydro.ac/center', 'text', 'server.center', '', FLAG_HIDDEN),
-    Setting('setting_server', 'server.name', 'Hydro', 'text', 'server.name', 'Server Name'),
-    Setting('setting_server', 'server.url', '/', 'text', 'server.url', 'Server BaseURL'),
-    Setting('setting_server', 'server.upload', '256m', 'text', 'server.upload', 'Max upload file size'),
-    Setting('setting_server', 'server.cdn', '/', 'text', 'server.cdn', 'CDN Prefix'),
-    Setting('setting_server', 'server.ws', '/', 'text', 'server.ws', 'WebSocket Prefix'),
-    Setting('setting_server', 'server.port', 8888, 'number', 'server.port', 'Server Port'),
-    Setting('setting_server', 'server.xff', null, 'text', 'server.xff', 'IP Header'),
-    Setting('setting_server', 'server.xhost', null, 'text', 'server.xhost', 'Hostname Header'),
-    Setting('setting_server', 'server.xproxy', false, 'boolean', 'server.xproxy', 'Use reverse_proxy'),
-    Setting('setting_server', 'server.cors', '', 'text', 'server.cors', 'CORS domains'),
     Setting('setting_server', 'server.language', 'zh_CN', langRange, 'server.language', 'Default display language'),
-    Setting('setting_server', 'server.login', true, 'boolean', 'server.login', 'Allow builtin-login', FLAG_PRO),
     Setting('setting_server', 'server.message', false, 'boolean', 'server.message', 'Allow users send messages'),
-    Setting('setting_server', 'server.checkUpdate', true, 'boolean', 'server.checkUpdate', 'Daily update check'),
-    Setting('setting_server', 'server.ignoreUA', ignoreUA, 'textarea', 'server.ignoreUA', 'ignoredUA'),
     ServerLangSettingNode,
     Setting('setting_limits', 'limit.by_user', false, 'boolean', 'limit.by_user', 'Use per-user limits instead of per ip limits'),
     Setting('setting_limits', 'limit.problem_files_max', 100, 'number', 'limit.problem_files_max', 'Max files per problem'),
@@ -271,13 +351,17 @@ SystemSetting(
     Setting('setting_limits', 'limit.user_files_size', 128 * 1024 * 1024, 'number', 'limit.user_files_size', 'Max total file size for user'),
     Setting('setting_limits', 'limit.contest_files', 100, 'number', 'limit.contest_files', 'Max files for contest or training'),
     Setting('setting_limits', 'limit.contest_files_size', 128 * 1024 * 1024, 'number', 'limit.contest_files_size', 'Max total file size for contest or training'),
+    Setting('setting_limits', 'limit.team_members', 5, 'number', 'limit.team_members', 'Max members per contest team'),
     Setting('setting_limits', 'limit.submission', 60, 'number', 'limit.submission', 'Max submission count per minute'),
     Setting('setting_limits', 'limit.submission_user', 15, 'number', 'limit.submission_user', 'Max submission count per user per minute'),
     Setting('setting_limits', 'limit.pretest', 60, 'number', 'limit.pretest', 'Max pretest count per minute'),
+    Setting('setting_limits', 'limit.codelength', 128 * 1024, 'number', 'limit.codelength', 'Max code length'),
     Setting('setting_basic', 'avatar.gravatar_url', '//cn.gravatar.com/avatar/', 'text', 'avatar.gravatar_url', 'Gravatar URL Prefix'),
     Setting('setting_basic', 'default.priv', builtin.PRIV.PRIV_DEFAULT, 'number', 'default.priv', 'Default Privilege', FLAG_HIDDEN),
     Setting('setting_basic', 'discussion.nodes', builtin.DEFAULT_NODES, 'yaml', 'discussion.nodes', 'Discussion Nodes'),
     Setting('setting_basic', 'problem.categories', builtin.CATEGORIES, 'yaml', 'problem.categories', 'Problem Categories'),
+    Setting('setting_basic', 'training.enrolled-users', true, 'boolean', 'training.enrolled-users', 'Show enrolled users for training'),
+    Setting('setting_basic', 'record.statMode', 'unique', 'text', 'record.statMode', 'Record stat mode'),
     Setting('setting_basic', 'pagination.problem', 100, 'number', 'pagination.problem', 'Problems per page'),
     Setting('setting_basic', 'pagination.contest', 20, 'number', 'pagination.contest', 'Contests per page'),
     Setting('setting_basic', 'pagination.discussion', 50, 'number', 'pagination.discussion', 'Discussions per page'),
@@ -286,79 +370,69 @@ SystemSetting(
     Setting('setting_basic', 'pagination.solution', 20, 'number', 'pagination.solution', 'Solutions per page'),
     Setting('setting_basic', 'pagination.training', 10, 'number', 'pagination.training', 'Trainings per page'),
     Setting('setting_basic', 'pagination.reply', 50, 'number', 'pagination.reply', 'Replies per page'),
-    Setting('setting_session', 'session.keys', [String.random(32)], 'text', 'session.keys', 'session.keys', FLAG_HIDDEN),
+    Setting('setting_basic', 'hydrooj.homepage', settingFile.homepage.default, 'yaml', 'hydrooj.homepage', 'Homepage config'),
+    Setting('setting_basic', 'hydrooj.langs', settingFile.langs.default, 'yaml', 'hydrooj.langs', 'Language config'),
+    Setting('setting_session', 'session.keys', [randomstring(32)], 'text', 'session.keys', 'session.keys', FLAG_HIDDEN),
     Setting('setting_session', 'session.domain', '', 'text', 'session.domain', 'session.domain', FLAG_HIDDEN),
     Setting('setting_session', 'session.saved_expire_seconds', 3600 * 24 * 30,
         'number', 'session.saved_expire_seconds', 'Saved session expire seconds'),
     Setting('setting_session', 'session.unsaved_expire_seconds', 3600 * 3,
         'number', 'session.unsaved_expire_seconds', 'Unsaved session expire seconds'),
     Setting('setting_storage', 'db.ver', 0, 'number', 'db.ver', 'Database version', FLAG_DISABLED | FLAG_HIDDEN),
-    Setting('setting_storage', 'installid', String.random(64), 'text', 'installid', 'Installation ID', FLAG_HIDDEN | FLAG_DISABLED),
+    Setting('setting_storage', 'installid', randomstring(64), 'text', 'installid', 'Installation ID', FLAG_HIDDEN | FLAG_DISABLED),
 );
 
-// eslint-disable-next-line import/no-mutable-exports
 export const langs: Record<string, LangConfig> = {};
 
-declare module 'cordis' {
-    interface Context {
-        setting: SettingService;
-    }
-}
+export class SettingModelService extends Service {
+    static inject = ['db', 'model:system'];
 
-const T = <F extends (...args: any[]) => any>(origFunc: F, disposeFunc?) =>
-    function method(this: cordis.Service, ...args: Parameters<F>) {
-        const res = origFunc(...args);
-        this[Context.current]?.on('dispose', () => (disposeFunc ? disposeFunc(res) : res()));
-    };
-
-export class SettingService extends Service {
-    PreferenceSetting = T(PreferenceSetting);
-    AccountSetting = T(AccountSetting);
-    DomainSetting = T(DomainSetting);
-    DomainUserSetting = T(DomainUserSetting);
-    SystemSetting = T(SystemSetting);
     constructor(ctx: Context) {
-        super(ctx, 'setting', true);
-        ctx.mixin('setting', ['PreferenceSetting', 'AccountSetting', 'DomainSetting', 'DomainUserSetting', 'SystemSetting']);
+        super(ctx, 'model:setting');
     }
 
-    get(key: string) {
-        return (this[Context.current] ? this[Context.current].domain?.config?.[key.replace(/\./g, '$')] : null) ?? global.Hydro.model.system.get(key);
+    async [Service.init]() {
+        logger.info('Ensuring settings');
+        for (const lang in global.Hydro.locales) {
+            if (!global.Hydro.locales[lang].__interface) continue;
+            langRange[lang] = global.Hydro.locales[lang].__langname;
+        }
+        const system = this.ctx['model:system'];
+        for (const setting of SYSTEM_SETTINGS) {
+            if (!setting.value) continue;
+            const current = await this.ctx.db.collection('system').findOne({ _id: setting.key });
+            if (!current || current.value == null || current.value === '') {
+                await system.set(setting.key, setting.value);
+            }
+        }
+        try {
+            Object.assign(langs, parseLang(system.get('hydrooj.langs')));
+            const range = {};
+            for (const key in langs) range[key] = langs[key].display;
+            LangSettingNode.range = range;
+            ServerLangSettingNode.range = range;
+        } catch (e) { /* Ignore */ }
+        return this.ctx.on('system/setting', (args) => {
+            if (!args.hydrooj?.langs) return;
+            Object.assign(langs, parseLang(args.hydrooj.langs));
+            const range = {};
+            for (const key in langs) range[key] = langs[key].display;
+            LangSettingNode.range = range;
+            ServerLangSettingNode.range = range;
+        });
     }
 }
 
-export async function apply(ctx: Context) {
-    ctx.provide('setting', undefined, true);
-    ctx.plugin(SettingService);
-    logger.info('Ensuring settings');
-    const system = global.Hydro.model.system;
-    for (const setting of SYSTEM_SETTINGS) {
-        if (!setting.value) continue;
-        const current = await global.Hydro.service.db.collection('system').findOne({ _id: setting.key });
-        if (!current || current.value == null || current.value === '') {
-            await retry(system.set, setting.key, setting.value);
-        }
-    }
-    try {
-        Object.assign(langs, parseLang(system.get('hydrooj.langs')));
-        const range = {};
-        for (const key in langs) range[key] = langs[key].display;
-        LangSettingNode.range = range;
-        ServerLangSettingNode.range = range;
-    } catch (e) { /* Ignore */ }
-    ctx.on('system/setting', (args) => {
-        if (!args.hydrooj?.langs) return;
-        Object.assign(langs, parseLang(args.hydrooj.langs));
-        const range = {};
-        for (const key in langs) range[key] = langs[key].display;
-        LangSettingNode.range = range;
-        ServerLangSettingNode.range = range;
-    });
+export const inject = ['db'];
+export function apply(ctx: Context) {
+    ctx.plugin(SettingModelService);
 }
 
 global.Hydro.model.setting = {
     apply,
-    SettingService,
+    inject,
+    SettingModelService,
+
     Setting,
     PreferenceSetting,
     AccountSetting,
@@ -369,6 +443,8 @@ global.Hydro.model.setting = {
     FLAG_DISABLED,
     FLAG_SECRET,
     FLAG_PRO,
+    FLAG_PUBLIC,
+    FLAG_PRIVATE,
     PREFERENCE_SETTINGS,
     ACCOUNT_SETTINGS,
     SETTINGS,

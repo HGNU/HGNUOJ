@@ -20,7 +20,7 @@
             <div class="media__body profile-header__main">
               <h1>
                 {{ udoc['uname'] }}
-                {% if handler.user.hasPerm(perm.PERM_VIEW_DISPLAYNAME) and udoc.displayName %}<small>({{ udoc['displayName'] }})</small>{% endif %}
+                {% if handler.user.hasPerm(perm.PERM_VIEW_USER_PRIVATE_INFO) and udoc.displayName %}<small>({{ udoc['displayName'] }})</small>{% endif %}
               </h1>
               <p>
                 {{ _('Stu_RealName') }}: {{ udoc['name'] }},
@@ -35,8 +35,8 @@
                 {{ _('UID') }}: {{ udoc['_id'] }},
                 {{ _('Registered at') }} {{ datetimeSpan(udoc['regat'])|safe }},
                 {{ _('last login at') }} {{ datetimeSpan(udoc['loginat'])|safe }},
-              {% if sdoc %}
-                {{ _('last active at') }} {{ datetimeSpan(sdoc['updateAt'])|safe }}.
+              {% if sdoc and sdoc.updateAt %}
+                {{ _('last active at') }} {{ datetimeSpan(sdoc['updateAt'])|safe if Date.now() - sdoc.updateAt.getTime() > 300000 else _('just now') }}.
               {% else %}
                 {{ _('currently offline') }}.
               {% endif %}
@@ -95,7 +95,7 @@
         </div>
       </div>
       <div class="profile-content">
-        <div class="section__tab-container immersive">
+        <div class="section__tab-container immersive memo">
           <ul class="section__tabs">
             {% if pdocs.length %}
               <li class="section__tab-item">
@@ -147,7 +147,7 @@
           </div>
           <div class="balancer__body">
             <div class="numbox">
-              <div class="numbox__num medium">{{ udoc.nLike or 0 }}</div>
+              <div class="numbox__num medium">{{ udoc.nLiked or 0 }}</div>
               <div class="numbox__text">{{ _('Solutions Liked') }}</div>
             </div>
           </div>

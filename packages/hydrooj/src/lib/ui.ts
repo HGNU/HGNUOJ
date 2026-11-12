@@ -42,14 +42,6 @@ export function inject(node: UIInjectableFields, name: string, args: Record<stri
 export function getNodes(name: UIInjectableFields) {
     return nodes[name];
 }
-/** @deprecated */
-export const Nav = (name, args, prefix, ...permPrivChecker) => {
-    inject('Nav', name, { ...args, prefix }, ...permPrivChecker);
-};
-/** @deprecated */
-export const ProblemAdd = (name, args, icon = 'add', text = 'Create Problem') => {
-    inject('ProblemAdd', name, { ...args, icon, text });
-};
 
 inject('Nav', 'homepage', { prefix: 'homepage' });
 inject('Nav', 'problem_main', { prefix: 'problem' }, PERM.PERM_VIEW_PROBLEM);
@@ -60,7 +52,8 @@ inject('Nav', 'record_main', {
     query: (handler) => (handler.user.hasPriv(PRIV.PRIV_USER_PROFILE)
         ? ({ uidOrName: handler.user._id })
         : ({})),
-});
+}, (handler) => (handler.user.hasPriv(PRIV.PRIV_USER_PROFILE)
+    ? true : handler.user.hasPerm(PERM.PERM_VIEW_RECORD)));
 inject('Nav', 'ranking', { prefix: 'ranking' }, PERM.PERM_VIEW_RANKING);
 inject('Nav', 'discussion_main', { prefix: 'discussion' }, PERM.PERM_VIEW_DISCUSSION);
 inject('Nav', 'courses', { prefix: 'courses' }, PRIV.PRIV_USER_PROFILE);
@@ -86,4 +79,3 @@ inject('DomainManage', 'domain_group', { family: 'Access Control', icon: 'user' 
 global.Hydro.ui.inject = inject;
 global.Hydro.ui.nodes = nodes as any;
 global.Hydro.ui.getNodes = getNodes;
-Object.assign(global.Hydro.ui, { ProblemAdd, Nav });

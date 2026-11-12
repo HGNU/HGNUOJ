@@ -3,9 +3,7 @@ import $ from 'jquery';
 import { ActionDialog } from 'vj/components/dialog';
 import Notification from 'vj/components/notification';
 import { AutoloadPage } from 'vj/misc/Page';
-import {
-  api, gql, i18n, request, tpl,
-} from 'vj/utils';
+import { i18n, request, tpl } from 'vj/utils';
 
 async function verifywebauthn($form) {
   if (!window.isSecureContext || !('credentials' in navigator)) {
@@ -20,7 +18,7 @@ async function verifywebauthn($form) {
     return null;
   }
   Notification.info(i18n('Please follow the instructions on your device to complete the verification.'));
-  const result = await startAuthentication(authnInfo.authOptions)
+  const result = await startAuthentication({ optionsJSON: authnInfo.authOptions })
     .catch((e) => {
       Notification.error(i18n('Failed to get credential: {0}', e));
       return null;
@@ -74,19 +72,11 @@ export default new AutoloadPage('user_verify', () => {
     ev.preventDefault();
     const form = ev.currentTarget.form;
     const uname = $(form).find('[name="uname"]').val() as string;
-    const info = await api(gql`
-      uname: user(uname:${uname}){
-        tfa authn
-      }
-      mail: user(mail:${uname}){
-        tfa authn
-      }
-    `, ['data']);
-    if (!info.uname && !info.mail) {
-      Notification.error(i18n('User not found.'));
+    if (!uname) {
+      form.elements.namedItem('uname')?.focus();
       return;
     }
-    const { authn, tfa } = info.uname || info.mail;
+    const { authn, tfa } = await request.get('/user/tfa', { q: uname });
     if (authn || tfa) {
       const handleKeyDown = (event) => {
         if (event.key === 'Enter') {

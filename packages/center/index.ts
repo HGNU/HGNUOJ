@@ -13,6 +13,14 @@ function decrypt(encrypted: string) {
     ).toString(crypto.enc.Utf8);
 }
 
+const safeLt = (a: string, b: string) => {
+    try {
+        return lt(a, b);
+    } catch (e) {
+        return false;
+    }
+};
+
 declare module 'hydrooj' {
     interface Collections {
         dataReport: any;
@@ -44,7 +52,7 @@ class DataReportHandler extends Handler {
             throw new ForbiddenError();
         }
         const old = await coll.findOne({ _id: installId });
-        const setPayload = {
+        const setPayload: any = {
             version: payload.version,
             name: payload.name,
             url: payload.url,
@@ -63,7 +71,8 @@ class DataReportHandler extends Handler {
             sandbox: payload.sandbox,
             dbVersion: payload.dbVersion,
         };
-        if (old && lt(payload.version, old.version)) {
+        if (old?.notification) setPayload.notification = '';
+        if (old && safeLt(payload.version, old.version)) {
             await coll.updateOne(
                 { _id: installId },
                 {
@@ -85,6 +94,7 @@ class DataReportHandler extends Handler {
         this.ctx.emit('center/report', this, installId, old, payload);
         // TODO deliver messages
         this.response.body = { code: 0 };
+        if (old?.notification) this.response.body.notification = old?.notification;
     }
 }
 

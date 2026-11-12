@@ -110,7 +110,7 @@ $highlight-button-color = #F6DF45
         width: auto
 
 .page--contest_problemlist
-  .col--status
+  .col--status, .col--correction
     width: rem(150px)
 
   .col--submit-at
@@ -128,7 +128,7 @@ $highlight-button-color = #F6DF45
     border-left: 1px solid $table-border-color
 
   +mobile()
-    .col--submit-at
+    .col--submit-at, .col--correction
       display: none
 
   +tablet()
@@ -163,6 +163,9 @@ $highlight-button-color = #F6DF45
   .main
     .row
       max-width: 100vw !important;
+
+  .data-table td
+    line-height: 1.5
 
   .col--rank
     width: rem(60px)
@@ -217,5 +220,7 @@ $highlight-button-color = #F6DF45
     width: rem(130px)
 
 .page--contest_manage
+  .col--id
+    width: rem(80px)
   .col--score
     width: rem(80px)
