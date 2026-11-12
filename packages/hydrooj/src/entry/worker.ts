@@ -60,12 +60,16 @@ export async function apply(ctx: Context) {
             resolve(c);
         });
     });
-    const loadDir = async (dir: string) => Promise.all((await fs.readdir(dir)).filter((i) => i.endsWith('.ts'))
-        .map((h) => ctx.loader.reloadPlugin(path.resolve(dir, h), '')));
+    const loadDir = async (dir: string, includeJavaScript = false) => {
+        const entries = await fs.readdir(dir);
+        const files = entries.filter((i) => i.endsWith('.ts')
+            || (includeJavaScript && i.endsWith('.js') && !entries.includes(`${i.slice(0, -3)}.ts`)));
+        return Promise.all(files.map((h) => ctx.loader.reloadPlugin(path.resolve(dir, h), '')));
+    };
     await loadDir(path.resolve(__dirname, '..', 'handler'));
     await ctx.plugin(require('../service/migration').default);
     await addon(pending, fail, ctx);
-    await loadDir(path.resolve(__dirname, '..', 'script'));
+    await loadDir(path.resolve(__dirname, '..', 'script'), true);
     await ctx.parallel('app/started');
     if (process.env.NODE_APP_INSTANCE === '0') {
         const staticDir = path.join(os.homedir(), '.hydro/static');

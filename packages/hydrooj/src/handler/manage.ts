@@ -321,6 +321,8 @@ class SystemStudentImportHandler extends SystemHandler {
     async post(domainId: string, students: string, draft: boolean) {
         const udocs = [];
         const messages: string[] = [];
+        let created = 0;
+        let errors = 0;
         const seenMail = new Set<string>();
         const seenName = new Set<string>();
         const seenId = new Set<string>();
@@ -342,6 +344,7 @@ class SystemStudentImportHandler extends SystemHandler {
                 udocs.push({ email, username, password, realname, classname, stuid });
             } catch (e) {
                 messages.push(`Line ${i + 1}: ${e.message} ${e.params || ''}`);
+                errors++;
             }
         }
         messages.push(`${udocs.length} students found.`);
@@ -351,13 +354,17 @@ class SystemStudentImportHandler extends SystemHandler {
                     await StudentModel.createAccount(item.email, item.username, item.password, {
                         name: item.realname, class: item.classname, stuid: item.stuid,
                     });
+                    created++;
                 } catch (e) {
                     messages.push(`${item.username}: ${e.message}`);
+                    errors++;
                 }
             }
         }
         this.response.body.users = udocs;
         this.response.body.messages = messages;
+        this.response.body.created = created;
+        this.response.body.errors = errors;
     }
 }
 /* eslint-enable no-await-in-loop */

@@ -730,7 +730,7 @@ const homework = buildContestRule({
             } else {
                 columns.push({
                     type: 'problem',
-                    value: String.fromCharCode(65 + i - 1),
+                    value: getAlphabeticId(i - 1),
                     raw: pid,
                 });
             }
