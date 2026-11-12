@@ -47,8 +47,6 @@ export const SYSTEM_SETTINGS_BY_KEY: SettingDict = {};
 
 export type SettingType = 'text' | 'yaml' | 'number' | 'float' | 'markdown' | 'password' | 'boolean' | 'textarea' | [string, string][] | Record<string, string> | 'json';
 
-type Validator = (value: any) => boolean;
-
 export const Setting = (
     family: string, key: string, value: any = null,
     type: SettingType = 'text', name = '', desc = '', flag = 0,

@@ -103,7 +103,7 @@ export class SettingService extends Service {
     async _actualMigrate(schema: Schema<any>) {
         const processNode = async (path: string[], node: Schema<any, any>) => {
             for (const item of node.list || []) await processNode(path, item); // eslint-disable-line no-await-in-loop
-            for (const key in node.dict || {}) await processNode([...path, ...key], node.dict[key]); // eslint-disable-line no-await-in-loop
+            for (const key in node.dict || {}) await processNode([...path, key], node.dict[key]); // eslint-disable-line no-await-in-loop
             if (['string', 'number', 'boolean'].includes(node.type)) {
                 const value = this.initialValues[path.join('.')];
                 const migrated = this.initialValues[`${path.join('.')}__migrated`];

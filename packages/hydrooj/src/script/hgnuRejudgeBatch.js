@@ -11,7 +11,7 @@ async function run(arg = {}, report = console.log) {
     const match = { domainId, status: 0 };
     if (uid) match.uid = uid;
     const coll = db.collection('record');
-    const total = await coll.count(match);
+    const total = await coll.countDocuments(match);
     const pids = await coll.aggregate([
         { $match: match },
         { $group: { _id: '$pid' } },

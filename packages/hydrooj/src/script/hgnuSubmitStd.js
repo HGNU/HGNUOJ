@@ -17,7 +17,7 @@ const Schema = schemastery.default?.any ? schemastery.default : schemastery;
 const ProblemModel = require('../model/problem').default;
 const RecordModel = require('../model/record').default;
 const db = require('../service/db').default;
-const { STATUS, STATUS_TEXTS } = require('@hydrooj/utils/lib/status');
+const { STATUS, STATUS_TEXTS } = require('@hydrooj/common');
 
 const DOMAIN = 'system';
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
