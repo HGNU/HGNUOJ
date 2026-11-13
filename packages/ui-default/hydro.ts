@@ -21,7 +21,7 @@ const start = new Date();
 
 function buildSequence(pages, type) {
   if (process.env.NODE_ENV !== 'production') {
-    if (['before', 'after'].indexOf(type) === -1) {
+    if (!['before', 'after'].includes(type)) {
       throw new Error("'type' should be one of 'before' or 'after'");
     }
   }
@@ -32,6 +32,16 @@ function buildSequence(pages, type) {
       func: p[`${type}Loading`],
       type,
     }));
+}
+
+function rounded() {
+  if (!UserContext.rounded) return;
+  const style = document.createElement('style');
+  style.innerHTML = `
+    .section { border-radius: 8px; }
+    .section__table-header { border-radius: 8px 8px 0 0; }
+  `;
+  document.head.append(style);
 }
 
 async function animate() {
@@ -54,6 +64,7 @@ async function animate() {
 
 export async function initPageLoader() {
   const pageLoader = new PageLoader();
+  rounded();
 
   const currentPageName = document.documentElement.getAttribute('data-page');
   const currentPage = pageLoader.getNamedPage(currentPageName);

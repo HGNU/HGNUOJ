@@ -91,14 +91,14 @@ class RatingCalculator {
 }
 
 interface RatingInputUser {
-    old: number,
-    uid: number,
-    rank: number,
+    old: number;
+    uid: number;
+    rank: number;
 }
 
 interface RatingOutputUser {
-    new: number,
-    uid: number,
+    new: number;
+    uid: number;
 }
 
 function calculate(users: RatingInputUser[]): RatingOutputUser[] {
@@ -119,5 +119,3 @@ function calculate(users: RatingInputUser[]): RatingOutputUser[] {
 }
 
 export default calculate;
-
-global.Hydro.lib.rating = calculate;

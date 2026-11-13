@@ -1,22 +1,28 @@
-import { ZipFS, ZipOpenFS } from '@yarnpkg/libzip';
-import AdmZip from 'adm-zip';
+import * as Zip from '@zip.js/zip.js';
+import _AdmZip from 'adm-zip';
 import _ from 'lodash';
 import { ObjectId as ObjectID } from 'mongodb';
 import Schema from 'schemastery';
 import superagent from 'superagent';
+import proxy from 'superagent-proxy';
 import { Context } from './context';
-export { ObjectId, Filter } from 'mongodb';
-export { WebSocket, WebSocketServer } from '@hydrooj/framework';
-export * from './utils';
+
+proxy(superagent);
+
 export * from './interface';
 export * from './typeutils';
-export * as LibZip from '@yarnpkg/libzip';
+export * from './utils';
+export { WebSocket, WebSocketServer } from '@hydrooj/framework';
+export { Filter, ObjectId } from 'mongodb';
 export {
-    Schema, AdmZip, superagent, _, ObjectID, ZipFS, ZipOpenFS,
+    _, ObjectID, Schema, superagent, Zip,
 };
+/** @deprecated Use ZipReader/ZipWriter instead */
+export const AdmZip = _AdmZip;
 export const definePlugin = <T = never>(args: {
-    using?: keyof Context[];
+    inject?: keyof Context[] | Record<keyof Context, any>;
     apply: (ctx: Context, config: T) => Promise<void> | void;
     schema?: Schema<T>;
     name?: string;
+    Config?: Schema<T>;
 }) => args;

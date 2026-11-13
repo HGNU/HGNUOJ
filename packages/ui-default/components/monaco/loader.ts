@@ -32,7 +32,11 @@ const loaders = {
     if (resource) setLocaleData(resource);
   },
   markdown: () => import('./languages/markdown'),
-  typescript: () => import('./languages/typescript').then((m) => m.loadTypes()),
+  typescript: async () => {
+    const m = await import('./languages/typescript');
+    await m.loadTypes();
+    return m;
+  },
   yaml: () => import('./languages/yaml'),
   external: async (monaco, feat) => {
     for (const item of await getFeatures(`monaco-${feat}`)) {
@@ -49,7 +53,13 @@ const loaders = {
 
 let loadPromise = Promise.resolve();
 
-export async function load(features = ['markdown']) {
+export async function load(features = ['markdown']): Promise<{
+  monaco: typeof import('monaco-editor/editor');
+  registerAction: typeof import('./index').registerAction;
+  customOptions: typeof import('./index').customOptions;
+  renderMarkdown: typeof import('./index').renderMarkdown;
+  [feature: string]: any;
+}> {
   let s = Date.now();
   await loadPromise;
   let resolve;
@@ -59,6 +69,7 @@ export async function load(features = ['markdown']) {
     console.log('Loading monaco editor');
   }
   const res = await import('./index');
+  const featureExports: Record<string, any> = {};
   if (!loaded) {
     console.log('Loaded monaco editor in', Date.now() - s, 'ms');
     loaded = [];
@@ -75,7 +86,7 @@ export async function load(features = ['markdown']) {
     s = Date.now();
     console.log('Loading monaco feature:', feat);
     try {
-      if (loaders[feat]) await loaders[feat]();
+      if (loaders[feat]) featureExports[feat] = await loaders[feat]();
       else await loaders.external(res.default, feat);
       console.log('Loaded monaco feature:', feat, 'in', Date.now() - s, 'ms');
       loaded.push(feat);
@@ -85,8 +96,13 @@ export async function load(features = ['markdown']) {
   }
   await res.loadThemePromise;
   resolve();
-  return { monaco: res.default, registerAction: res.registerAction, customOptions: res.customOptions };
+  return {
+    monaco: res.default,
+    registerAction: res.registerAction,
+    customOptions: res.customOptions,
+    renderMarkdown: res.renderMarkdown,
+    ...featureExports,
+  };
 }
 
 export default load;
-window.Hydro.components.loadMonaco = load;

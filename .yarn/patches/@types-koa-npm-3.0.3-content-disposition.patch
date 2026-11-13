@@ -1,0 +1,6 @@
+diff --git a/index.d.ts b/index.d.ts
+--- a/index.d.ts
++++ b/index.d.ts
+@@ -358,1 +358,1 @@
+-    attachment(filename?: string, options?: contentDisposition.Options): void;
++    attachment(filename?: string, options?: contentDisposition.CreateOptions): void;

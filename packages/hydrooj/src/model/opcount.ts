@@ -4,7 +4,7 @@ import db from '../service/db';
 const coll = db.collection('opcount');
 
 export async function inc(op: string, ident: string, periodSecs: number, maxOperations: number) {
-    const now = new Date().getTime();
+    const now = Date.now();
     const expireAt = new Date(now - (now % (periodSecs * 1000)) + periodSecs * 1000);
     try {
         const res = await coll.findOneAndUpdate({
@@ -13,7 +13,7 @@ export async function inc(op: string, ident: string, periodSecs: number, maxOper
             expireAt,
             opcount: { $lt: maxOperations },
         }, { $inc: { opcount: 1 } }, { upsert: true, returnDocument: 'after' });
-        return res.value.opcount;
+        return res.opcount;
     } catch (e) {
         if (e.message.includes('duplicate')) throw new OpcountExceededError(op, periodSecs, maxOperations);
         throw e;

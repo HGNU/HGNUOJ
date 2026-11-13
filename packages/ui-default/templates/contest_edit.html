@@ -132,6 +132,14 @@
           <h2 class="section__title">{{ _('Contest Settings') }}</h2>
         </div>
         <div class="section__body">
+          {{ form.form_text({
+            columns:12,
+            label:'Submission language limit',
+            name:'langs',
+            value:tdoc.langs|default(''),
+            placeholder:_("Seperated with ','"),
+            row:true
+          }) }}
           <div class="row">
             {{ form.form_checkbox({
               columns:2,
@@ -158,6 +166,35 @@
               value:tdoc.allowViewCode|default(true),
               row:false
             }) }}
+            {{ form.form_checkbox({
+              columns:4,
+              label:'Allow Print',
+              name:'allowPrint',
+              placeholder:_('Allow user to print during contest'),
+              value:tdoc.allowPrint|default(false),
+              row:false
+            }) }}
+            {{ form.form_checkbox({
+              columns:4,
+              label:'Allow Team',
+              name:'allowTeam',
+              placeholder:_('Allow team participation'),
+              help_text:_('Once enabled, team participation cannot be disabled for this contest.'),
+              value:tdoc.allowTeam|default(false),
+              row:false,
+              disabled:tdoc.allowTeam|default(false)
+            }) }}
+            <div style="display: none" class="contest-rule-settings contest-rule--oi contest-rule--strictioi">
+            {{ form.form_checkbox({
+              columns:4,
+              label:'Keep Scoreboard Hidden',
+              name:'keepScoreboardHidden',
+              placeholder:_('Keep scoreboard hidden even after contest ends'),
+              value:tdoc.keepScoreboardHidden|default(false),
+              disabled:true,
+              row:false
+            }) }}
+            </div>
             <div style="display: none" class="contest-rule-settings contest-rule--acm contest-rule--ioi">
             {{ form.form_text({
               columns:4,
@@ -173,7 +210,7 @@
             <div style="display: none" class="contest-rule-settings contest-rule--oi contest-rule--ioi contest-rule--ledo contest-rule--strictioi">
             {{ form.form_text({
               columns:4,
-              label:'Flexable Duration',
+              label:'Flexible Duration',
               name:'contestDuration',
               placeholder:_('(leave blank if none)'),
               value:tdoc.duration|default(''),
@@ -212,6 +249,20 @@
     </div>
   </div>
   <div class="medium-3 columns">
+    {% if tdoc %}
+    <div class="section side">
+      <div class="section__header">
+        <h1 class="section__title">{{ _('Files') }}</h1>
+        <div class="section__tools">
+          <button class="primary rounded button" name="upload_file" data-type="public" data-sidebar="true">{{ _('Upload') }}</button>
+        </div>
+      </div>
+      {% set sidebar = true %}
+      {% set files = tdoc.files %}
+      {% set filetype = "public" %}
+      {% include "partials/files.html" %}
+    </div>
+    {% endif %}
     {% include 'components/md_hint.html' %}
   </div>
 </div>

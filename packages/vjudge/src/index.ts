@@ -1,13 +1,16 @@
 /* eslint-disable no-await-in-loop */
 import os from 'os';
+import { LangConfig, STATUS } from '@hydrooj/common';
 import {
-    Context, db, DomainModel, JudgeHandler, Logger,
-    ProblemModel, RecordModel, Service, SettingModel, sleep, STATUS, TaskModel, Time,
+    Context, db, DomainModel, JudgeResultCallbackContext, Logger,
+    ProblemModel, RecordModel, Service, SettingModel,
+    sleep, SolutionModel, SystemModel, TaskModel, Time, yaml,
 } from 'hydrooj';
 import { BasicProvider, IBasicProvider, RemoteAccount } from './interface';
 import providers from './providers/index';
 
 const coll = db.collection('vjudge');
+const collMount = db.collection('vjudge.mount');
 const logger = new Logger('vjudge');
 const syncing = {};
 
@@ -16,14 +19,15 @@ class AccountService {
     problemLists: Set<string>;
     syncing = false;
     listUpdated = false;
+    stopped = false;
     working = false;
     error = '';
 
-    constructor(public Provider: BasicProvider, public account: RemoteAccount) {
+    constructor(public Provider: BasicProvider, public account: RemoteAccount, public ctx: Context) {
         this.api = new Provider(account, async (data) => {
             await coll.updateOne({ _id: account._id }, { $set: data });
         });
-        this.problemLists = Set.union(this.api.entryProblemLists || ['main'], this.account.problemLists || []);
+        this.problemLists = new Set(this.api.entryProblemLists || ['main']).union(new Set(this.account.problemLists || []));
         this.main().catch((e) => {
             logger.error(`Error occured in ${account.type}/${account.handle}`);
             this.working = false;
@@ -41,17 +45,20 @@ class AccountService {
     }
 
     async judge(task) {
-        const rdoc = await RecordModel.get(task.domainId, task.rid);
-        task = Object.assign(rdoc, task);
-        const next = (payload) => JudgeHandler.next({ ...payload, rid: task.rid, domainId: task.domainId });
-        const end = (payload) => JudgeHandler.end({ ...payload, rid: task.rid, domainId: task.domainId });
+        const context = new JudgeResultCallbackContext(this.ctx, task);
+        const next = (payload) => context.next(payload);
+        const end = (payload) => context.end(payload);
         await next({ status: STATUS.STATUS_FETCHED });
         try {
             const langConfig = SettingModel.langs[task.lang];
+            if (this.Provider.Langs && !langConfig?.validAs?.[this.account.type]) {
+                end({ status: STATUS.STATUS_COMPILE_ERROR, message: `Language not supported: ${task.lang}` });
+                return;
+            }
             if (langConfig.validAs?.[this.account.type]) task.lang = langConfig.validAs[this.account.type];
             const comment = langConfig.comment;
-            if (comment) {
-                const msg = `Hydro submission #${task.rid}@${new Date().getTime()}`;
+            if (comment && !this.Provider.noComment) {
+                const msg = `Hydro submission #${task.rid}@${Date.now()}`;
                 if (typeof comment === 'string') task.code = `${comment} ${msg}\n${task.code}`;
                 else if (comment instanceof Array) task.code = `${comment[0]} ${msg} ${comment[1]}\n${task.code}`;
             }
@@ -73,11 +80,13 @@ class AccountService {
         }
     }
 
-    async sync(domainId: string, resync = false, list: string) {
-        let page = 1;
-        let pids = await this.api.listProblem(page, resync, list);
-        while (pids.length) {
-            logger.info(`${domainId}: Syncing page ${page}`);
+    async sync(target: string, fromPage = 0, list: string) {
+        let page = Math.max(fromPage, 1);
+        let pids: string[] = [];
+        const [domainId, namespaceId] = target.split('.');
+        do {
+            pids = await this.api.listProblem(page, fromPage, list);
+            logger.info(`${target}: Syncing page ${page}`);
             for (const id of pids) {
                 if (id.startsWith('LIST::')) {
                     await this.addProblemList(id.split('::')[1]);
@@ -87,12 +96,13 @@ class AccountService {
                 const [pid, metastr = '{}'] = id.split('#');
                 const normalizedPid = pid.replace(/[_-]/g, '');
                 const meta = JSON.parse(metastr);
-                if (await ProblemModel.get(domainId, normalizedPid) || syncing[`${domainId}/${pid}`]) continue;
+                const targetPid = namespaceId ? `${namespaceId}-${normalizedPid}` : normalizedPid;
+                if (await ProblemModel.get(domainId, targetPid) || syncing[`${domainId}/${pid}`]) continue;
                 syncing[`${domainId}/${pid}`] = true;
                 try {
                     const res = await this.api.getProblem(pid, meta);
                     if (!res) continue;
-                    const docId = await ProblemModel.add(domainId, normalizedPid, res.title, res.content, 1, res.tag);
+                    const docId = await ProblemModel.add(domainId, targetPid, res.title, '', 1, res.tag);
                     if (res.difficulty) await ProblemModel.edit(domainId, docId, { difficulty: res.difficulty });
                     for (const key in res.files) {
                         await ProblemModel.addAdditionalFile(domainId, docId, key, res.files[key]);
@@ -100,15 +110,18 @@ class AccountService {
                     for (const key in res.data) {
                         await ProblemModel.addTestdata(domainId, docId, key, res.data[key]);
                     }
-                    logger.info(`${domainId}: problem ${docId}(${pid}) sync done`);
+                    await ProblemModel.edit(domainId, docId, { content: res.content });
+                    if (res.solution) await SolutionModel.add(domainId, docId, 1, res.solution);
+                    logger.info(`${domainId}: problem ${pid} sync done -> ${targetPid}(${docId})`);
                 } finally {
                     delete syncing[`${domainId}/${pid}`];
                 }
                 await sleep(5000);
             }
             page++;
-            pids = await this.api.listProblem(page, resync, list);
-        }
+            if (this.stopped) return page - 1;
+        } while (pids.length);
+        return page - 2;
     }
 
     async login() {
@@ -125,20 +138,16 @@ class AccountService {
         if (this.syncing) return;
         this.syncing = true;
         try {
-            const ddocs = await DomainModel.getMulti({ mount: this.account.type.split('.')[0] }).toArray();
+            const mounts = await collMount.find({ mount: this.account.type.split('.')[0] }).toArray();
             do {
                 this.listUpdated = false;
                 for (const listName of this.problemLists) {
-                    for (const ddoc of ddocs) {
-                        if (ddoc.syncDone === true) {
-                            await DomainModel.edit(ddoc._id, { syncDone: { main: true } });
-                            ddoc.syncDone = { main: true };
-                        }
-                        if (!ddoc.syncDone?.[listName]) await this.sync(ddoc._id, false, listName);
-                        else await this.sync(ddoc._id, true, listName);
-                        await DomainModel.edit(ddoc._id, { [`syncDone.${listName}`]: true });
-                        ddoc.syncDone ||= {};
-                        ddoc.syncDone[listName] = true;
+                    for (const mount of mounts) {
+                        const from = typeof mount.syncDone?.[listName] === 'number' ? mount.syncDone?.[listName] : 0;
+                        const page = await this.sync(mount._id, from, listName);
+                        await collMount.updateOne({ _id: mount._id }, { $set: { [`syncDone.${listName}`]: page } });
+                        mount.syncDone ||= {};
+                        mount.syncDone[listName] = page;
                     }
                 }
             } while (this.listUpdated);
@@ -150,46 +159,90 @@ class AccountService {
         this.syncing = false;
     }
 
+    async stop() {
+        return this.api?.stop?.();
+    }
+
     async main() {
         const res = await this.login();
         if (!res) return;
-        setInterval(() => this.login(), Time.hour);
-        TaskModel.consume({ type: 'remotejudge', subType: this.account.type.split('.')[0] }, this.judge.bind(this), false);
+        const interval = setInterval(() => this.login(), Time.hour);
+        const consumer = TaskModel.consume({ type: 'remotejudge', subType: this.account.type.split('.')[0] }, this.judge.bind(this), false);
         this.working = true;
         this.handleSync();
+        this.stop = async () => {
+            clearInterval(interval);
+            consumer.destroy();
+            this.stopped = true;
+        };
     }
 }
 
-declare module 'hydrooj' {
+declare module 'cordis' {
     interface Context {
         vjudge: VJudgeService;
     }
 }
 
 class VJudgeService extends Service {
+    static inject = ['model:setting']; // Make sure langs are loaded before any consumer starts
+
     constructor(ctx: Context) {
-        super(ctx, 'vjudge', false);
+        super(ctx, 'vjudge');
     }
 
-    accounts: RemoteAccount[];
+    accounts: RemoteAccount[] = [];
     private providers: Record<string, any> = {};
     private pool: Record<string, AccountService> = {};
-    async start() {
+    async [Service.init]() {
+        if (process.env.NODE_APP_INSTANCE !== '0') return;
+        if (process.env.HYDRO_CLI) return;
         this.accounts = await coll.find().toArray();
-        this.ctx.setInterval(this.sync.bind(this), Time.week);
+        this.ctx.interval(this.sync.bind(this), Time.week);
     }
 
     addProvider(type: string, provider: BasicProvider, override = false) {
-        if (process.env.VJUDGE_DEBUG && process.env.VJUDGE_DEBUG !== type) return;
+        if (process.env.VJUDGE_DEBUG && !(`,${process.env.VJUDGE_DEBUG},`).includes(`,${type},`)) return;
         if (!override && this.providers[type]) throw new Error(`duplicate provider ${type}`);
-        this.providers[type] = provider;
-        for (const account of this.accounts.filter((a) => a.type === type)) {
-            if (account.enableOn && !account.enableOn.includes(os.hostname())) continue;
-            this.pool[`${account.type}/${account.handle}`] = new AccountService(provider, account);
-        }
-        this[Context.current]?.on('dispose', () => {
-            // TODO dispose session
+        this.ctx.effect(() => {
+            this.providers[type] = provider;
+            const services = [];
+            for (const account of this.accounts.filter((a) => a.type === type)) {
+                if (account.enableOn && !account.enableOn.includes(os.hostname())) continue;
+                const service = new AccountService(provider, account, this.ctx);
+                services.push(service);
+                this.pool[`${account.type}/${account.handle}`] = service;
+            }
+            return () => {
+                for (const service of services) service.stop();
+                delete this.providers[type];
+            };
         });
+        // FIXME: potential race condition
+        if (provider.Langs) this.updateLangs(type, provider.Langs);
+        // TODO dispose session
+    }
+
+    async updateLangs(provider: string, mapping: Record<string, Partial<LangConfig>>) {
+        const config = yaml.load(SystemModel.get('hydrooj.langs')) as Record<string, Partial<LangConfig>>;
+        const old = yaml.dump(config);
+        const existingMappings: Set<string> = new Set();
+        for (const key in config) {
+            const target = config[key]?.validAs?.[provider];
+            if (target) existingMappings.add(target);
+        }
+        for (const key in mapping) {
+            if (existingMappings.has(mapping[key].key)) continue;
+            config[key] ||= {
+                execute: '/bin/echo For remote judge only',
+                hidden: true,
+                ...mapping[key],
+            };
+            config[key].validAs ||= {};
+            config[key].validAs[provider] = mapping[key].key;
+        }
+        const newConfig = yaml.dump(config);
+        if (old !== newConfig) await SystemModel.set('hydrooj.langs', newConfig);
     }
 
     async sync() {
@@ -214,18 +267,61 @@ class VJudgeService extends Service {
 }
 
 export { BasicFetcher } from './fetch';
-export { VERDICT } from './verdict';
 export * from './interface';
+export { VERDICT } from './verdict';
+
+async function migrateLegacyRecords() {
+    const rewrite = (from: string[], to: string) => RecordModel.coll.updateMany({ lang: { $in: from } }, { $set: { lang: to } });
+    await Promise.all([
+        rewrite(['csgoj.0', 'poj.1', 'poj.5'], 'c'),
+        rewrite(['csgoj.1'], 'cc.cc17o2'),
+        rewrite(['csgoj.3', 'poj.2'], 'java'),
+        rewrite(['csgoj.6'], 'py.py3'),
+        rewrite(['csgoj.17'], 'go'),
+        rewrite(['poj.0', 'poj.4'], 'cc.cc98'),
+    ]);
+    return true;
+}
+
+async function migrateLegacyMounts() {
+    const ddocs = await DomainModel.coll.find({ mount: { $exists: true, $ne: null } }).toArray();
+    for (const ddoc of ddocs) {
+        const syncDone = ddoc.syncDone && typeof ddoc.syncDone === 'object'
+            ? ddoc.syncDone : { main: typeof ddoc.syncDone === 'number' ? ddoc.syncDone : !!ddoc.syncDone };
+        // A retry must preserve progress already written to the new collection.
+        await collMount.updateOne({ _id: ddoc._id }, { $setOnInsert: { mount: ddoc.mount, syncDone } }, { upsert: true });
+        await DomainModel.coll.updateOne({ _id: ddoc._id }, { $unset: { mount: '', mountInfo: '', syncDone: '' } });
+    }
+    return true;
+}
+
+async function migrateLegacyData() {
+    await migrateLegacyRecords();
+    return migrateLegacyMounts();
+}
 
 export const name = 'vjudge';
 export async function apply(ctx: Context) {
+    ctx.plugin(VJudgeService);
     if (process.env.NODE_APP_INSTANCE !== '0') return;
     if (process.env.HYDRO_CLI) return;
-    ctx.plugin(VJudgeService);
+    ctx.inject(['migration'], async (c) => {
+        c.migration.registerChannel('vjudge', [
+            // Hydro 4 deployments have remote mounts but no channel version yet.
+            migrateLegacyData,
+            c.migration.dontWait(migrateLegacyRecords, 'update csgoj and poj langs in record collection'),
+            migrateLegacyMounts,
+            // Repair sites that previously skipped migration when the channel was first created.
+            migrateLegacyData,
+        ]);
+    });
     ctx.inject(['vjudge'], async (c) => {
-        await c.vjudge.start();
         for (const [k, v] of Object.entries(providers)) {
-            c.vjudge.addProvider(k, v);
+            try {
+                if (!SystemModel.get(`vjudge.builtin-${k}-disable`)) c.vjudge.addProvider(k, v);
+            } catch (e) {
+                logger.error(`Error adding provider ${k}: ${e}`);
+            }
         }
         c.inject(['check'], ({ check }) => {
             check.addChecker('Vjudge', async (_ctx, log, warn, error) => {

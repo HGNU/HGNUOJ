@@ -1,8 +1,8 @@
 import keyword from 'emojis-keywords';
 import list from 'emojis-list';
-import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
+import * as monaco from 'monaco-editor/editor';
 import qface from 'qface';
-import { api, gql } from 'vj/utils';
+import { api } from 'vj/utils';
 
 function emoji(range) {
   return keyword.map((i, index) => ({
@@ -16,7 +16,7 @@ function emoji(range) {
 
 function qqEmoji(range) {
   return qface.data.flatMap((i) => {
-    const url = qface.getUrl(i.QSid, 'https://qq-face.vercel.app');
+    const url = qface.getUrl(i.QSid, 'https://koishi.js.org/QFace');
     return [i.QDes.substring(1), ...(i.Input || [])].map((input) => ({
       label: `/${input}`,
       kind: monaco.languages.CompletionItemKind.Keyword,
@@ -40,12 +40,7 @@ monaco.languages.registerCodeLensProvider('markdown', {
         dispose: () => { },
       };
     }
-    const { data } = await api(gql`
-      users(ids: ${users.map((i) => +i.matches[1])}) {
-        _id
-        uname
-      }
-    `);
+    const data = await api('users', { ids: users.map((i) => +i.matches[1]) }, ['_id', 'uname']);
     return {
       lenses: users.map((i, index) => ({
         range: i.range,
@@ -53,7 +48,7 @@ monaco.languages.registerCodeLensProvider('markdown', {
         command: {
           id: 'hydro.openUserPage',
           arguments: [i.matches[1]],
-          title: `@${data.users.find((doc) => doc._id.toString() === i.matches[1])?.uname || i.matches[1]}`,
+          title: `@${data.find((doc) => doc._id.toString() === i.matches[1])?.uname || i.matches[1]}`,
         },
       })),
       dispose: () => { },
@@ -67,7 +62,7 @@ monaco.languages.registerCodeLensProvider('markdown', {
 monaco.languages.registerCompletionItemProvider('markdown', {
   async provideCompletionItems(model, position) {
     const word = model.getWordAtPosition(position);
-    if (word.word.length < 2) return { suggestions: [] };
+    if (!word || word.word.length < 2) return { suggestions: [] };
     const prefix = model.getValueInRange({
       startLineNumber: position.lineNumber,
       endLineNumber: position.lineNumber,
@@ -82,14 +77,7 @@ monaco.languages.registerCompletionItemProvider('markdown', {
       endColumn: word.endColumn,
     };
     if (prefix === '@') {
-      const users = await api(gql`
-        users(search: ${word.word}) {
-          _id
-          uname
-          avatarUrl
-          priv
-        }
-      `, ['data', 'users']);
+      const users = await api('users', { search: word.word }, ['_id', 'uname', 'avatarUrl', 'priv']);
       return {
         suggestions: users.map((i) => ({
           label: { label: `@${i.uname}`, description: `UID=${i._id}` },

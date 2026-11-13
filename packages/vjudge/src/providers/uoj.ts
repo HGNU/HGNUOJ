@@ -2,7 +2,7 @@
 import { PassThrough } from 'stream';
 import { JSDOM } from 'jsdom';
 import {
-    Logger, parseMemoryMB, parseTimeMS, sleep, STATUS,
+    Logger, parseMemoryMB, parseTimeMS, randomstring, sleep, STATUS,
 } from 'hydrooj';
 import { BasicFetcher } from '../fetch';
 import { IBasicProvider, RemoteAccount } from '../interface';
@@ -24,7 +24,12 @@ const MAPPING = {
 
 export default class UOJProvider extends BasicFetcher implements IBasicProvider {
     constructor(public account: RemoteAccount, private save: (data: any) => Promise<void>) {
-        super(account, 'https://uoj.ac', 'form', logger);
+        // UOJ WAF start blocking vjudge User-Agent
+        super(account, 'https://uoj.ac', 'form', logger, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            },
+        });
     }
 
     csrf: string;
@@ -32,14 +37,14 @@ export default class UOJProvider extends BasicFetcher implements IBasicProvider 
     async getCsrfToken(url: string) {
         const { text: html, header } = await this.get(url);
         if (header['set-cookie']) await this.setCookie(header['set-cookie'], true);
-        let value = /_token *: *"(.+?)"/g.exec(html);
+        let value = /_token *: *"(.+?)"/.exec(html);
         if (value) return value[1];
-        value = /_token" value="(.+?)"/g.exec(html);
+        value = /_token" value="(.+?)"/.exec(html);
         return value?.[1];
     }
 
     get loggedIn() {
-        return this.get('/login').then(({ text: html }) => !html.includes('<title>登录 - Universal Online Judge</title>'));
+        return this.get('/login').then(({ text: html }) => !html.includes('<title>登录 - '));
     }
 
     async ensureLogin() {
@@ -74,7 +79,7 @@ export default class UOJProvider extends BasicFetcher implements IBasicProvider 
             if (!src.startsWith('http')) continue;
             const file = new PassThrough();
             this.get(src).pipe(file);
-            const fid = String.random(8);
+            const fid = randomstring(8);
             files[`${fid}.png`] = file;
             ele.setAttribute('src', `file://${fid}.png`);
         }
@@ -131,8 +136,7 @@ export default class UOJProvider extends BasicFetcher implements IBasicProvider 
         };
     }
 
-    async listProblem(page: number, resync = false) {
-        if (resync && page > 1) return [];
+    async listProblem(page: number) {
         const { text } = await this.get(`/problems?page=${page}`);
         const $dom = new JSDOM(text);
         const index = $dom.window.document.querySelector('ul.pagination>li.active>a').innerHTML;
@@ -161,7 +165,6 @@ export default class UOJProvider extends BasicFetcher implements IBasicProvider 
     async waitForSubmission(id: string, next, end) {
         let i = 1;
         let count = 0;
-        // eslint-disable-next-line no-constant-condition
         while (count < 120) {
             count++;
             await sleep(3000);
@@ -228,7 +231,7 @@ export default class UOJProvider extends BasicFetcher implements IBasicProvider 
                 }
             }
             if (document.querySelector('tbody').innerHTML.includes('Judging')) continue;
-            // eslint-disable-next-line no-unsafe-optional-chaining
+
             const score = +summary.children[3]?.children[0]?.innerHTML || 0;
             const status = score === 100 ? STATUS.STATUS_ACCEPTED : STATUS.STATUS_WRONG_ANSWER;
             return await end({

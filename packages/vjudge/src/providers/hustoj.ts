@@ -47,7 +47,7 @@ interface HustOJRemoteConfig {
         endpoint?: string;
         matcher?: RegExp;
         selector?: string;
-    },
+    };
     server?: string;
 }
 
@@ -68,7 +68,7 @@ const defaultConfig: HustOJRemoteConfig = {
     // },
     ceInfo: {
         endpoint: '/ceinfo.php?sid={rid}',
-        matcher: /<pre class=".*?" id='errtxt' >(.*?)<\/pre>/gmi,
+        matcher: /<pre class=".*?" id='errtxt' >(.*?)<\/pre>/gi,
     },
     monit: {
         endpoint: '/status.php?pid={pid}&user_id={uid}',
@@ -87,7 +87,7 @@ const defaultConfig: HustOJRemoteConfig = {
         codeField: 'source',
         extra: {},
         tooFrequent: 'UNKNOWN',
-        rid: /<tbody>\n<tr class="evenrow"><td>([0-9]+)<\/td>/gmi,
+        rid: /<tbody>\n<tr class="evenrow"><td>([0-9]+)<\/td>/gi,
     },
     server: 'https://acm.hust.edu.cn',
 };
@@ -116,7 +116,7 @@ export class HUSTOJ extends BasicFetcher implements IBasicProvider {
         });
         this.config = config;
         this.updateConfig();
-        if (this.config.server) this.setEndpoint(this.config.server);
+        if (this.config.server) this.endpoint = this.config.server;
     }
 
     updateConfig() { }
@@ -188,7 +188,7 @@ export class HUSTOJ extends BasicFetcher implements IBasicProvider {
     async waitForSubmission(rid, next, end) {
         let url = this.config.monit.endpoint.replace('{uid}', this.state.username).replace('{pid}', this.state.pid);
         // eslint-disable-next-line max-len
-        const RE = new RegExp(`<tr.*?class="evenrow".*?><td>${rid}</td>.*?</td><td>.*?</td><td><font color=".*?">(.*?)</font></td><td>(.*?)<font color="red">kb</font></td><td>(.*?)<font color="red">ms`, 'gmi');
+        const RE = new RegExp(`<tr.*?class="evenrow".*?><td>${rid}</td>.*?</td><td>.*?</td><td><font color=".*?">(.*?)</font></td><td>(.*?)<font color="red">kb</font></td><td>(.*?)<font color="red">ms`, 'gim');
         const res = await this.get(url);
         let [, status, time, memory] = RE.exec(res.text);
         while (isProcessing(status)) {
@@ -233,195 +233,6 @@ export class HUSTOJ extends BasicFetcher implements IBasicProvider {
     }
 }
 
-export class YBT extends HUSTOJ {
-    updateConfig() {
-        // this.LANGUAGES = {
-        //     cc: 1,
-        //     c: 2,
-        //     java: 3,
-        //     pas: 4,
-        //     py: 5,
-        //     py3: 5,
-        // };
-        this.config.login.extra = { login: '登录' };
-        this.config.submit = {
-            endpoint: '/action.php',
-            idField: 'problem_id',
-            langField: 'language',
-            codeField: 'source',
-            extra: { submit: '提交', user_id: this.account.handle },
-            tooFrequent: '提交频繁啦！',
-        };
-        this.config.ceInfo = {
-            endpoint: '/show_ce_info.php?runid={rid}',
-            matcher: /<td class="ceinfo">(.*?)<\/td>/gmi,
-        };
-        this.config.server = 'http://ybt.ssoier.cn:8088/';
-    }
-
-    async waitForSubmission(rid, next, end) {
-        const url = `/statusx1.php?runidx=${rid}`;
-        let res = await this.get(url);
-        let staText = res.text.split(':');
-        while (isProcessing(staText[4])) {
-            next({ status: STATUS.STATUS_JUDGING, progress: 0 });
-            await sleep(1000);
-            res = await this.get(url);
-            staText = res.text.split(':');
-        }
-        if (VERDICT[staText[4]] === STATUS.STATUS_COMPILE_ERROR) {
-            const ceInfoUrl = this.config.ceInfo.endpoint.replace('{rid}', rid);
-            let compilerText = 'Cannot get compiler text';
-            if (this.config.ceInfo.matcher) {
-                const resp = await this.get(ceInfoUrl);
-                const match = this.config.ceInfo.matcher.exec(resp.text);
-                if (match) compilerText = decodeURIComponent(match[1]).replace(/\n/g, '').replace(/<br\/>/g, '\n').replace(/\n\n/g, '\n');
-            } else if (this.config.ceInfo.selector) {
-                const { document } = await this.html(ceInfoUrl);
-                const match = document.querySelector(this.config.ceInfo.selector)?.innerHTML;
-                if (match) compilerText = decodeURIComponent(match).replace(/\n/g, '').replace(/<br\/>/g, '\n').replace(/\n\n/g, '\n');
-            }
-            end({
-                status: STATUS.STATUS_COMPILE_ERROR,
-                score: 0,
-                time: 0,
-                memory: 0,
-                compilerText,
-            });
-            return;
-        }
-        const staText4 = staText[4].split('|');
-        const staText5 = staText[5].split(',');
-        let totalTime = 0;
-        let totalMem = 0;
-        let totalScore = 0;
-        let totalStatus = STATUS.STATUS_WRONG_ANSWER;
-        for (const i in staText5) {
-            if (staText5[i]) {
-                let score;
-                const staText5i = staText5[i].split('|');
-                if (VERDICT[staText5i[0]] === STATUS.STATUS_ACCEPTED) {
-                    score = 100;
-                    totalScore += score;
-                } else score = 0;
-                const staText5i1 = staText5i[1].split('_');
-                totalMem += +staText5i1[0];
-                totalTime += +staText5i1[1];
-                next({
-                    status: STATUS.STATUS_JUDGING,
-                    case: {
-                        status: VERDICT[staText5i[0]],
-                        score,
-                        time: +staText5i1[1],
-                        memory: +staText5i1[0],
-                    },
-                    progress: 99,
-                });
-            }
-        }
-        if (VERDICT[staText4[0]] === STATUS.STATUS_ACCEPTED) {
-            totalScore = 100;
-            totalStatus = STATUS.STATUS_ACCEPTED;
-        } else if (totalScore >= 100) {
-            totalScore = 0;
-        }
-        end({
-            status: totalStatus,
-            score: totalScore,
-            time: totalTime,
-            memory: totalMem,
-        });
-    }
-}
-
-// 已弃用。请直接从 https://hydro.ac/ybtbas.zip 下载题库文件并按照压缩包内说明导入系统。
-export class YBTBAS extends YBT {
-    static langs = {
-        ybtbas: {
-            display: 'YBTBAS',
-            hidden: true,
-            remote: 'ybtbas',
-        },
-        'ybtbas.7': {
-            display: 'G++14',
-            monaco: 'cpp',
-            highlight: 'cpp',
-        },
-        'ybtbas.1': {
-            display: 'G++',
-            monaco: 'cpp',
-            highlight: 'cpp',
-        },
-        'ybtbas.2': {
-            display: 'GCC',
-            monaco: 'cpp',
-            highlight: 'cpp',
-        },
-        'ybtbas.3': {
-            display: 'Java',
-            monaco: 'java',
-            highlight: 'java',
-        },
-        'ybtbas.4': {
-            display: 'Pascal',
-            monaco: 'pas',
-            highlight: 'pascal',
-        },
-        'ybtbas.5': {
-            display: 'Python',
-            monaco: 'python',
-            highlight: 'python',
-        },
-    };
-
-    updateConfig() {
-        this.config.login.check = '退出登录';
-        this.config.login.extra = async () => {
-            const captcha = await this.get('/login_xx.php').responseType('arraybuffer');
-            if (captcha.headers['set-cookie']) this.setCookie(captcha.headers['set-cookie']);
-            if (!global.parseCaptcha) await sleep(30000);
-            if (!global.parseCaptcha) return { login: '登录' };
-            return {
-                login: '登录',
-                auth: await global.parseCaptcha(captcha.body).toLowerCase(),
-            };
-        };
-        this.config.submit = {
-            endpoint: '/action.php',
-            idField: 'problem_id',
-            langField: 'language',
-            codeField: 'source',
-            extra: { submit: '提交', user_id: this.account.handle },
-            tooFrequent: '提交频繁啦！',
-            rid: /runidx=([0-9]+)/mi,
-            noRefetch: true,
-        };
-        this.config.ceInfo = {
-            endpoint: '/show_ce_info.php?runid={rid}',
-            selector: 'table[width="900px"]>tbody>tr>td>div>center>table>tbody>tr>td',
-        };
-        this.config.server = 'http://bas.ssoier.cn:8086/';
-        sleep(30000).then(() => {
-            // Prevent cookie expiration
-            if (!global.parseCaptcha) setInterval(() => this.get('/'), 60000);
-        });
-    }
-}
-
-export class BZOJ extends HUSTOJ {
-    updateConfig() {
-        this.config.login = {
-            endpoint: '/login.php',
-            usernameField: 'user_id',
-            passwordField: 'password',
-            extra: { submit: 'Submit' },
-        };
-        this.config.submit.tooFrequent = 'You should not submit more than twice in 10 seconds.....';
-        this.config.submit.rid = /Submit_Time<\/td><\/tr>\n<tr align="center" class="evenrow"><td>([0-9]+)/igm;
-        this.config.ceInfo.matcher = /<pre>([\s\S]*?)<\/pre>/im;
-    }
-}
-
 export class XJOI extends HUSTOJ {
     updateConfig() {
         // this.LANGUAGES = { cc: 'g++', c: 'gcc', pas: 'fpc' };
@@ -438,14 +249,15 @@ export class XJOI extends HUSTOJ {
             codeField: 'source',
             tooFrequent: '请稍后再提交',
             extra: {},
-            rid: /<tr class="table-bordered"><td class="status-table-text"> <a href="\/detail\/([0-9]+)"/igm,
+            rid: /<tr class="table-bordered"><td class="status-table-text"> <a href="\/detail\/([0-9]+)"/gi,
         };
     }
 
     async waitForSubmission(rid, next, end) {
         const SUPERMONIT = [
-            /<textarea .*?>([\s\S]*?)<\/textarea>/igm,
-            /time: ([0-9]+)ms, memory: ([0-9]+)kb, points: ([0-9]+), status: (.*?)/gmi,
+            // eslint-disable-next-line regexp/no-super-linear-backtracking
+            /<textarea .*?>([\s\S]*?)<\/textarea>/gi,
+            /time: ([0-9]+)ms, memory: ([0-9]+)kb, points: ([0-9]+), status: (.*?)/gi,
         ];
         const url = `/detail${rid}`;
         let res = await this.get(url);

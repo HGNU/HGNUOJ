@@ -2,9 +2,23 @@ import $ from 'jquery';
 import React from 'react';
 import { InfoDialog } from 'vj/components/dialog';
 import { NamedPage } from 'vj/misc/Page';
-import { tpl } from 'vj/utils';
+import { tpl, withTransitionCallback } from 'vj/utils';
 
 export default new NamedPage('record_detail', async () => {
+  $(document).on('click', '.compiler-text', () => {
+    withTransitionCallback(() => {
+      $('.collapsed').removeClass('collapsed');
+    });
+  });
+  $(document).on('click', '.subtask-case', function () {
+    const text = $(this).find('.message').text();
+    const data = $(this).find('.message').html();
+    if (!text?.trim() || (!text.includes('\n') && text.length < 20)) return;
+    new InfoDialog({
+      $body: tpl(<pre dangerouslySetInnerHTML={{ __html: data }} />),
+    }).open();
+  });
+
   if (!UiContext.socketUrl) return;
   const [{ default: WebSocket }, { DiffDOM }] = await Promise.all([
     import('../components/socket'),
@@ -15,19 +29,22 @@ export default new NamedPage('record_detail', async () => {
   const dd = new DiffDOM();
   sock.onmessage = (_, data) => {
     const msg = JSON.parse(data);
-    const newStatus = $(msg.status_html);
-    const oldStatus = $('#status');
-    dd.apply(oldStatus[0], dd.diff(oldStatus[0], newStatus[0]));
-    const newSummary = $(msg.summary_html);
-    const oldSummary = $('#summary');
-    dd.apply(oldSummary[0], dd.diff(oldSummary[0], newSummary[0]));
     if (typeof msg.status === 'number' && window.parent) window.parent.postMessage({ status: msg.status });
+    withTransitionCallback(() => {
+      if (msg.status_html) {
+        const newStatus = $(msg.status_html);
+        const oldStatus = $('#status');
+        oldStatus.trigger('vjContentRemove');
+        dd.apply(oldStatus[0], dd.diff(oldStatus[0], newStatus[0]));
+        $('#status').trigger('vjContentNew');
+      }
+      if (msg.summary_html) {
+        const newSummary = $(msg.summary_html);
+        const oldSummary = $('#summary');
+        oldSummary.trigger('vjContentRemove');
+        dd.apply(oldSummary[0], dd.diff(oldSummary[0], newSummary[0]));
+        $('#summary').trigger('vjContentNew');
+      }
+    });
   };
-  $(document).on('click', '.subtask-case', function () {
-    const data = $(this).find('.message').text();
-    if (!data?.trim()) return;
-    new InfoDialog({
-      $body: tpl(<pre>{data}</pre>),
-    }).open();
-  });
 });

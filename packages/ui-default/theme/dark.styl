@@ -93,7 +93,7 @@ $hover-background-color = #424242
     box-shadow: 0 0.125rem 0.625rem rgba(255 255 255 20%)
 
   .section__table-header
-    background-color: transparent
+    background-color: rgba(0, 0, 0, 0.95)
     box-shadow: 0 0.1875rem 0.125rem rgba(255 255 255 3%)
 
   .data-table tr
@@ -118,6 +118,9 @@ $hover-background-color = #424242
 
   .sidebar-user-profile .user-profile-name
     color: #bbb
+
+  .section__tab-header-item
+    color: #d8e0e6 !important
 
   .section__tab-header-item:hover
     background-color: #171717
@@ -212,16 +215,12 @@ $hover-background-color = #424242
   .menu__link.highlight
     background: rgb(40, 11, 20)
 
-  .bp5-tag.bp5-minimal:not([class*="bp5-intent-"])
-    background-color: rgba(87, 100, 117, .2)
-    color: #d9dfe7
-
   .typo table thead th
     background: #1e1e1e
     background-color: rgb(30, 30, 30)
 
   .typo table th, .typo table td, .typo table caption
-    border-color: #323232
+    border-color: #666
     color: #999
 
   body>.marker
@@ -278,6 +277,9 @@ $hover-background-color = #424242
 
   .autocomplete-tag
     background-color: #ff0000
+
+  .problem__tag-item
+    color: #d8dee3
 
   .problem__tag-link
     background-color: #1f1f1f
@@ -391,14 +393,15 @@ $hover-background-color = #424242
       background-color: $main-background-color !important
       border-color: #3d3d3d !important
 
-  .bp5-tab
-    color: #aaa
+  &.hasjs .collapsed #status:not([data-status="7"]) .compiler-text-mask
+    background-image: linear-gradient(to bottom, transparent, #000000 25px)
 
-    &[aria-disabled=true]
-      color: #555
-  
-  .bp5-card,.bp5-dialog,.bp5-dialog-header,.bp5-dialog-footer
-    background-color: #1f1f1f !important
-  
-  .bp5-input-group input
-    border-color: #3d3d3d!important
+  &.page--record_detail .subtask
+    background-color: #000 !important
+
+  &.page--contest_scoreboard .star-highlight 
+    background: #6f757b
+
+  .search-sort
+    color: #eee
+    background-color: #1f1f1f

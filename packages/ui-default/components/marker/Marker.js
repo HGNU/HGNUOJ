@@ -23,7 +23,6 @@ class Marker {
   }
 
   constructor() {
-    // eslint-disable-next-line no-constructor-return
     if (Marker.exists()) return markerInstance;
     if (markerInstance) {
       markerInstance.destroy();
@@ -50,6 +49,9 @@ class Marker {
 
   markSelection(color) {
     const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) {
+      return;
+    }
     const range = selection.getRangeAt(0);
     this.$container.attr('contentEditable', true);
     if (range) {

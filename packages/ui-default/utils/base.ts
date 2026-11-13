@@ -6,7 +6,7 @@ import DOMServer from 'react-dom/server';
 
 export function substitute(str: string, obj: any) {
   return str.replace(/\{([^{}]+)\}/g, (match, key) => {
-    if (obj[key] !== undefined) return obj[key].toString();
+    if (obj[key] !== undefined && obj[key] !== null) return obj[key].toString();
     return `{${key}}`;
   });
 }
@@ -81,6 +81,15 @@ export const zIndexManager = {
   },
 };
 
+export function addSpeculationRules(rules) {
+  if (HTMLScriptElement.supports?.('speculationrules')) {
+    const specScript = document.createElement('script');
+    specScript.type = 'speculationrules';
+    specScript.textContent = JSON.stringify(rules);
+    document.body.append(specScript);
+  }
+}
+
 export const request = {
   ajax(options: Record<string, any>) {
     const stack = new Error().stack;
@@ -105,15 +114,17 @@ export const request = {
             reject(err);
           } else if (typeof jqXHR.responseJSON === 'object' && jqXHR.responseJSON.error) {
             const { error } = jqXHR.responseJSON;
+            let err: any;
             if (error.params) {
               const message = i18n(error.message, ...error.params);
-              const err = new Error(message === error.message && error.params.length
+              err = new Error(message === error.message && error.params.length
                 ? `${error.message}: ${error.params.join(' ')}`
-                : message) as any;
+                : message);
               err.rawMessage = error.message;
               err.params = error.params;
-              reject(err);
-            } else reject(new Error(jqXHR.responseJSON.error.message));
+            } else err = new Error(error.message);
+            if (jqXHR.status >= 400 && jqXHR.status < 500) err.isUserFacingError = true;
+            reject(err);
           } else if (errorThrown instanceof Error) {
             reject(errorThrown);
           } else {
@@ -174,13 +185,34 @@ export const request = {
   },
 };
 
-Object.assign(window.Hydro.utils, {
-  i18n,
-  rawHtml,
-  substitute,
-  secureRandomString,
-  request,
-  tpl,
-  delay,
-  zIndexManager,
-});
+let transition: ViewTransition | null = null;
+
+export async function withTransitionCallback(callback: () => (Promise<void> | void)) {
+  if (!document.startViewTransition || document.visibilityState === 'hidden') return callback?.();
+  transition?.skipTransition?.();
+  const currentTransition = document.startViewTransition(callback);
+  transition = currentTransition;
+  const ready = currentTransition.ready.catch((error) => {
+    if (!(error instanceof DOMException) || !['AbortError', 'InvalidStateError'].includes(error.name)) throw error;
+  });
+  try {
+    await Promise.all([ready, currentTransition.finished]);
+  } finally {
+    if (transition === currentTransition) transition = null;
+  }
+  return null;
+}
+
+export async function setTemporaryViewTransitionNames(entries, vtPromise: Promise<void>) {
+  for (const [$el, name] of entries) {
+    $el.style.viewTransitionName = name;
+  }
+  await vtPromise;
+  for (const [$el] of entries) {
+    $el.style.viewTransitionName = '';
+  }
+}
+
+export function getTheme(): 'dark' | 'light' {
+  return ['light', 'dark'].includes(UserContext.theme) ? UserContext.theme : 'light';
+}

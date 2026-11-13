@@ -3,7 +3,7 @@ import Schema from 'schemastery';
 import * as semver from 'semver';
 import superagent from 'superagent';
 import MessageModel from '../model/message';
-import * as system from '../model/system';
+import system from '../model/system';
 
 async function getRemoteVersion(id: string) {
     try {
@@ -14,7 +14,7 @@ async function getRemoteVersion(id: string) {
     }
 }
 
-export async function run(_: {}, report: Function) {
+export async function run(_: void, report: (data: any) => void) {
     const current = global.Hydro.version;
     const message = [''];
     for (const name in current) {

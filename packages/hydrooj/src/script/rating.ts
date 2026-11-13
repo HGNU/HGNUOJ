@@ -17,9 +17,10 @@ import db from '../service/db';
 export const description = 'Calculate rp of a domain, or all domains';
 
 type ND = NumericDictionary<number>;
+type Report = (data: any) => void;
 
 interface RpDef {
-    run(domainIds: string[], udict: ND, report: Function): Promise<void>;
+    run(domainIds: string[], udict: ND, report: Report): Promise<void>;
     hidden: boolean;
     base: number;
 }
@@ -100,7 +101,7 @@ export const RpTypes: Record<string, RpDef> = {
 };
 global.Hydro.model.rp = RpTypes;
 
-export async function calcLevel(domainId: string, report: Function) {
+export async function calcLevel(domainId: string, report: Report) {
     await domain.setMultiUserInDomain(domainId, {}, { level: 0, rank: null });
     let last = { rp: null };
     let rank = 0;
@@ -134,15 +135,13 @@ export async function calcLevel(domainId: string, report: Function) {
     await bulk.execute();
 }
 
-async function runInDomain(domainId: string, report: Function) {
-    const info = await domain.get(domainId);
-    const domainIds = [domainId, ...(info.union || [])];
+async function runInDomain(domainId: string, report: Report) {
     const results: Record<keyof typeof RpTypes, ND> = {};
     const udict = Counter();
     await db.collection('domain.user').updateMany({ domainId }, { $set: { rpInfo: {} } });
     for (const type in RpTypes) {
         results[type] = new Proxy({}, { get: (self, key) => self[key] || RpTypes[type].base });
-        await RpTypes[type].run(domainIds, results[type], report);
+        await RpTypes[type].run([domainId], results[type], report);
         const bulk = db.collection('domain.user').initializeUnorderedBulkOp();
         for (const uid in results[type]) {
             const udoc = await UserModel.getById(domainId, +uid);
@@ -161,18 +160,18 @@ async function runInDomain(domainId: string, report: Function) {
     await calcLevel(domainId, report);
 }
 
-export async function run({ domainId }, report: Function) {
+export async function run({ domainId }, report: Report) {
     if (!domainId) {
         const domains = await domain.getMulti().toArray();
         await report({ message: `Found ${domains.length} domains` });
         for (const i in domains) {
-            const start = new Date().getTime();
+            const start = Date.now();
             await runInDomain(domains[i]._id, report);
             await report({
                 case: {
                     status: STATUS.STATUS_ACCEPTED,
                     message: `Domain ${domains[i]._id} finished`,
-                    time: new Date().getTime() - start,
+                    time: Date.now() - start,
                     memory: 0,
                     score: 0,
                 },

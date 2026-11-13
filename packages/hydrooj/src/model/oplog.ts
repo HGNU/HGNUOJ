@@ -1,9 +1,9 @@
 import { cloneDeep } from 'lodash';
 import { ObjectId } from 'mongodb';
 import { OplogDoc } from '../interface';
-import * as bus from '../service/bus';
+import bus from '../service/bus';
 import db from '../service/db';
-import type { Handler } from '../service/server';
+import type { ConnectionHandler, Handler } from '../service/server';
 
 export const coll = db.collection('oplog');
 
@@ -37,7 +37,7 @@ function safeKeys(data: any) {
     return data;
 }
 
-export async function log<T extends Handler>(handler: T, type: string, data: any) {
+export async function log<T extends Handler | ConnectionHandler>(handler: T, type: string, data: any) {
     const args = safeKeys(cloneDeep(handler.args));
     await bus.parallel('oplog/log', type, handler, args, data);
     const res = await coll.insertOne({
@@ -48,9 +48,11 @@ export async function log<T extends Handler>(handler: T, type: string, data: any
         domainId: handler.args.domainId,
         ua: handler.request.headers?.['user-agent'],
         referer: handler.request.headers?.referer,
+        path: handler.request.path,
         args,
         operator: handler.user?._id,
         operateIp: handler.request.ip,
+        json: handler.request.json,
     });
     return res.insertedId;
 }

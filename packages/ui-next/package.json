@@ -1,0 +1,43 @@
+{
+  "name": "@hydrooj/ui-next",
+  "version": "0.0.0",
+  "author": "Baoshuo <i@baoshuo.ren>",
+  "license": "AGPL-3.0",
+  "type": "module",
+  "main": "index.ts",
+  "types": "api.ts",
+  "preferUnplugged": true,
+  "hydro": {
+    "cli": false
+  },
+  "files": [
+    "index.ts",
+    "api.ts",
+    "css.d.ts",
+    "src/",
+    "index.html",
+    "public/",
+    "tsconfig.json",
+    "vite.config.ts"
+  ],
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "esbuild": "0.25.2",
+    "is-relative-url": "^4.1.1",
+    "path-to-regexp": "^9.0.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "simple-git": "^4.0.2"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "koa2-connect": "^1.0.2",
+    "vite": "^8.3.8"
+  }
+}

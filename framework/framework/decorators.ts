@@ -1,3 +1,4 @@
+import Schema from 'schemastery';
 import { ValidationError } from './error';
 import type { Handler } from './server';
 import { Converter, Type, Validator } from './validator';
@@ -6,11 +7,18 @@ type MethodDecorator = (target: any, funcName: string, obj: any) => any;
 type ClassDecorator = <T extends new (...args: any[]) => any>(Class: T) => T extends new (...args: infer R) => infer S
     ? new (...args: R) => S : never;
 export interface ParamOption<T> {
-    name: string,
-    source: 'all' | 'get' | 'post' | 'route',
-    isOptional?: boolean | 'convert',
-    convert?: Converter<T>,
-    validate?: Validator,
+    name: string;
+    source: 'all' | 'get' | 'post' | 'route';
+    isOptional?: boolean | 'convert';
+    convert?: Converter<T>;
+    validate?: Validator;
+}
+
+const kSchema = Symbol.for('schemastery');
+const mergeValidator = (L: Validator, R: Validator) => (v: any) => L(v) && R(v);
+
+function isSchema(v: any): v is Schema {
+    return v && typeof v === 'function' && kSchema in v;
 }
 
 function _buildParam(name: string, source: 'get' | 'post' | 'all' | 'route', ...args: Array<Type<any> | boolean | Validator | Converter<any>>) {
@@ -19,6 +27,19 @@ function _buildParam(name: string, source: 'get' | 'post' | 'all' | 'route', ...
     let isValidate = true;
     while (cursor < args.length) {
         const current = args[cursor];
+        if (isSchema(current)) {
+            v.validate = (val) => {
+                try {
+                    current(val);
+                    return true;
+                } catch (e) {
+                    return false;
+                }
+            };
+            v.convert = (val) => current(val);
+            cursor++;
+            continue;
+        }
         if (current instanceof Array) {
             const type = current;
             if (type[0]) v.convert = type[0];
@@ -26,7 +47,7 @@ function _buildParam(name: string, source: 'get' | 'post' | 'all' | 'route', ...
             if (type[2]) v.isOptional = type[2];
         } else if (typeof current === 'boolean') v.isOptional = current;
         else if (isValidate) {
-            if (current !== null) v.validate = current;
+            if (current !== null) v.validate = v.validate ? mergeValidator(v.validate, current) : current;
             isValidate = false;
         } else v.convert = current;
         cursor++;

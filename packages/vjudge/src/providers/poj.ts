@@ -2,7 +2,7 @@
 import { PassThrough } from 'stream';
 import { JSDOM } from 'jsdom';
 import {
-    htmlEncode, Logger, parseMemoryMB, parseTimeMS, sleep, STATUS,
+    htmlEncode, Logger, parseMemoryMB, parseTimeMS, randomstring, sleep, STATUS,
 } from 'hydrooj';
 import { BasicFetcher } from '../fetch';
 import { IBasicProvider, RemoteAccount } from '../interface';
@@ -10,54 +10,31 @@ import { VERDICT } from '../verdict';
 
 const logger = new Logger('remote/poj');
 
-/* langs
-poj:
-  display: POJ
-  execute: /bin/echo Invalid
-  domain:
-  - poj
-poj.0:
-  display: G++
-  monaco: cpp
-  highlight: cpp astyle-c
-  comment: //
-poj.1:
-  display: GCC
-  monaco: c
-  highlight: c astyle-c
-  comment: //
-poj.2:
-  display: Java
-  monaco: java
-  highlight: java astyle-java
-  comment: //
-poj.3:
-  display: Pascal
-  monaco: pascal
-  highlight: pascal
-  comment: //
-poj.4:
-  display: C++
-  monaco: cpp
-  highlight: cpp astyle-c
-  comment: //
-poj.5:
-  display: C
-  monaco: c
-  highlight: c astyle-c
-  comment: //
-poj.6:
-  display: Fortran
-  monaco: plain
-  highlight: plain
-*/
-
 const langs = {
     default: 'en',
     'zh-CN': 'zh',
 };
 
 export default class POJProvider extends BasicFetcher implements IBasicProvider {
+    static Langs = {
+        'cc.cc98': {
+            display: 'C++',
+            key: '0',
+        },
+        c: {
+            display: 'C',
+            key: '1',
+        },
+        java: {
+            display: 'Java',
+            key: '2',
+        },
+        pas: {
+            display: 'Pascal',
+            key: '3',
+        },
+    };
+
     constructor(public account: RemoteAccount, private save: (data: any) => Promise<void>) {
         super(account, 'http://poj.org', 'form', logger);
     }
@@ -118,7 +95,7 @@ export default class POJProvider extends BasicFetcher implements IBasicProvider 
                 }
                 const file = new PassThrough();
                 this.get(src).pipe(file);
-                const fid = String.random(8);
+                const fid = randomstring(8);
                 images[src] = fid;
                 files[`${fid}.png`] = file;
                 ele.setAttribute('src', `file://${fid}.png`);
@@ -170,7 +147,7 @@ export default class POJProvider extends BasicFetcher implements IBasicProvider 
                 } else html += node.innerHTML;
             }
             if (lang in langs) {
-                contents[langs[lang]] = html;
+                contents[`${langs[lang]}.html`] = { lang: langs[lang], content: html };
             }
         }
         return {
@@ -184,17 +161,15 @@ export default class POJProvider extends BasicFetcher implements IBasicProvider 
         };
     }
 
-    async listProblem(page: number, resync = false) {
-        if (resync && page > 1) return [];
+    async listProblem(page: number) {
         const { text } = await this.get(`/problemlist?volume=${page}`);
         const $dom = new JSDOM(text);
         return Array.from($dom.window.document.querySelectorAll('.a>tbody>tr[align="center"]'))
             .map((i) => `P${+i.children[0].innerHTML ? i.children[0].innerHTML : i.children[1].innerHTML}`);
     }
 
-    async submitProblem(id: string, lang: string, code: string) {
+    async submitProblem(id: string, language: string, code: string) {
         await this.ensureLogin();
-        const language = lang.includes('poj.') ? lang.split('poj.')[1] : '0';
         code = Buffer.from(code).toString('base64');
         const { text } = await this.post('/submit').send({
             problem_id: id.split('P')[1],
@@ -214,7 +189,6 @@ export default class POJProvider extends BasicFetcher implements IBasicProvider 
     // eslint-disable-next-line consistent-return
     async waitForSubmission(id: string, next, end) {
         let count = 0;
-        // eslint-disable-next-line no-constant-condition
         while (count < 60) {
             count++;
             await sleep(3000);

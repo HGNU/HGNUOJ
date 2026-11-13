@@ -38,7 +38,8 @@ export default function reducer(state = {}, action = {}) {
       return {
         ...state,
         [to]: {
-          ...state[to] || {},
+          _id: udoc._id,
+          ...state[to],
           udoc,
           messages: [
             ...state[to]?.messages || [],

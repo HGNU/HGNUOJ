@@ -22,28 +22,30 @@ langs:
     __hint__:
       - ~ All keys starting with _ will be ignored
       - ~ Entries named like [foo], [foo].[bar] [foo].[baz]
-      - will be merged into one category.
+      - . will be merged into one category.
       - ~ A entry named [foo].[bar] will inhert all options
-      - defined in entry [foo] if not overwritten
+      - . defined in entry [foo] if not overwritten
       - ~ code_file option defaults to foo.[name]
       - ~ highlight option defaults to [name]
       - ~ if highlight option was set, monaco option defaults
-      - to [highlight], otherwise defaults to [name]
+      - . to [highlight], otherwise defaults to [name]
       - ~ Compiling be be ignored if compile option wasn't set
       - ~ Key marked with a ? means the option is optional
       - (name):
-          disabled?: whether to disable this language
-          compile?: Compile Command
-          code_file?: Where to write code file when compiling, defaults to `foo.[name]`
-          execute: Command to execute the program
-          highlight?: PrismJS highlight mode
-          monaco?: Monaco editor mode
-          time_limit_rate?: Time limit rate
-          target?: Compiler output file, defaults to `foo`
-          display: Display name
-          compile_time_limit?: Compile time limit, in milliseconds
-          address_space_limit?: Enable address space memory limit as CCF did
-          process_limit?: Limit the number of thread
+          disabled?: (boolean) whether to disable this language
+          hidden?: (boolean) won't show in the language selection
+          compile?: (string) Compile Command
+          code_file?: (string) Where to write code file when compiling, defaults to `foo.[name]`
+          execute: (string) Command to execute the program
+          highlight?: (string) PrismJS highlight mode
+          monaco?: (string) Monaco editor mode
+          time_limit_rate?: (number) Time limit rate
+          target?: (string) Compiler output file, defaults to `foo`
+          display: (string) Display name
+          compile_time_limit?: (number) Compile time limit, in milliseconds
+          compile_memory_limit?: (number) Compile memory limit, in MB
+          address_space_limit?: (boolean) Enable address space memory limit as CCF did
+          process_limit?: (number) Limit the number of thread
     bash:
       display: Bash
       code_file: foo.sh
@@ -64,29 +66,37 @@ langs:
       display: C++
       address_space_limit: true
       process_limit: 1
-    cc.cc20:
-      compile: /usr/bin/g++ -Wall -std=c++20 -o foo foo.cc -lm -I/include
-      display: C++20
-    cc.cc20o2:
-      compile: /usr/bin/g++ -Wall -std=c++20 -o foo foo.cc -lm -O2 -I/include
-      display: C++20(O2)
-    cc.cc17:
-      compile: /usr/bin/g++ -Wall -std=c++17 -o foo foo.cc -lm -I/include
-      display: C++17
-    cc.cc17o2:
-      compile: /usr/bin/g++ -Wall -std=c++17 -o foo foo.cc -lm -O2 -I/include
-      display: C++17(O2)
-    cc.cc14:
-      display: C++14
-    cc.cc14o2:
-      compile: /usr/bin/g++ -Wall -std=c++14 -o foo foo.cc -lm -O2 -I/include
-      display: C++14(O2)
+      version: /usr/bin/g++ --version
+      compile_time_limit: 10000
+    cc.cc98:
+      compile: /usr/bin/g++ -Wall -std=c++98 -o foo foo.cc -lm -I/include
+      display: C++98
+    cc.cc98o2:
+      compile: /usr/bin/g++ -Wall -std=c++98 -o foo foo.cc -lm -O2 -I/include
+      display: C++98(O2)
     cc.cc11:
       compile: /usr/bin/g++ -Wall -std=c++11 -o foo foo.cc -lm -I/include
       display: C++11
     cc.cc11o2:
       compile: /usr/bin/g++ -Wall -std=c++11 -o foo foo.cc -lm -O2 -I/include
       display: C++11(O2)
+    cc.cc14:
+      display: C++14
+    cc.cc14o2:
+      compile: /usr/bin/g++ -Wall -std=c++14 -o foo foo.cc -lm -O2 -I/include
+      display: C++14(O2)
+    cc.cc17:
+      compile: /usr/bin/g++ -Wall -std=c++17 -o foo foo.cc -lm -I/include
+      display: C++17
+    cc.cc17o2:
+      compile: /usr/bin/g++ -Wall -std=c++17 -o foo foo.cc -lm -O2 -I/include
+      display: C++17(O2)
+    cc.cc20:
+      compile: /usr/bin/g++ -Wall -std=c++20 -o foo foo.cc -lm -I/include
+      display: C++20
+    cc.cc20o2:
+      compile: /usr/bin/g++ -Wall -std=c++20 -o foo foo.cc -lm -O2 -I/include
+      display: C++20(O2)
     pas:
       compile: /usr/bin/fpc -O2 -o/w/foo foo.pas
       highlight: pascal
@@ -102,6 +112,7 @@ langs:
       monaco: java
       display: Java
       compile_time_limit: 30000
+      compile_memory_limit: 1024
       version: /usr/bin/javac -version
     kt:
       compile: echo "Invalid language selection"
@@ -117,22 +128,27 @@ langs:
       execute: /usr/bin/java -jar foo.jar
       display: Kotlin/JVM
       compile_time_limit: 30000
+      compile_memory_limit: 1024
       version: /usr/bin/kotlinc -version
     py:
-      compile: /usr/bin/python3.10 -c "import py_compile; py_compile.compile('/w/foo.py', '/w/foo', doraise=True)"
+      compile: /usr/bin/python -c "import py_compile; py_compile.compile('/w/foo.py', '/w/foo', doraise=True)"
       code_file: foo.py
-      execute: /usr/bin/python3.10 foo
+      execute: /usr/bin/python foo
       highlight: python
-      display: Python3
-      version: /usr/bin/python3.10 --version
-      time_limit_rate: 2
-    pypy3:
-      code_file: foo.py
-      execute: /usr/bin/pypy3.9 foo.py
+      display: Python
+    py.py2:
+      display: Python 2
+      disabled: true
+    py.py3:
+      compile: /usr/bin/python3 -c "import py_compile; py_compile.compile('/w/foo.py', '/w/foo', doraise=True)"
+      execute: /usr/bin/python3 foo
+      display: Python 3
+      version: /usr/bin/python3 --version
+    py.pypy3:
+      compile: /bin/bash -c "/usr/bin/pypy3 -c \"import py_compile; py_compile.compile('/w/foo.py', '/w/foo', doraise=True)\" && mv foo.py foo"
+      execute: /bin/bash -c 'mv foo foo.py && /usr/bin/pypy3 -B foo.py'
       display: PyPy3
       version: /usr/bin/pypy3 --version
-      time_limit_rate: 2
-      highlight: python
     php:
       execute: /usr/bin/php foo.php
       display: PHP
@@ -166,7 +182,7 @@ langs:
       execute: /usr/bin/mono foo
       highlight: csharp
       monaco: csharp
-      display: "C#"
+      display: 'C#'
       version: /usr/bin/mcs --version
     r:
       display: R

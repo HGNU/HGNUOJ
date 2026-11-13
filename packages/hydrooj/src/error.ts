@@ -34,7 +34,9 @@ export const PrivilegeError = Err('PrivilegeError', ForbiddenError, function (th
 export const ContestNotAttendedError = Err('ContestNotAttendedError', ForbiddenError, "You haven't attended this contest yet.");
 export const RequireProError = Err('RequireProError', ForbiddenError, 'RequireProError');
 export const ContestAlreadyAttendedError = Err('ContestAlreadyAttendedError', ForbiddenError, "You've already attended this contest.");
+export const TeamMemberLimitError = Err('TeamMemberLimitError', ForbiddenError, 'Team is full (maximum {0} members).');
 export const ContestNotLiveError = Err('ContestNotLiveError', ForbiddenError, 'This contest is not live.');
+export const ContestAlreadyStartedError = Err('ContestAlreadyStartedError', ForbiddenError, 'This contest has already started.');
 export const ContestNotEndedError = Err('ContestNotEndedError', ForbiddenError, 'This contest is not ended.');
 export const ContestScoreboardHiddenError = Err('ContestScoreboardHiddenError', ForbiddenError, 'Contest scoreboard is not visible.');
 export const TrainingAlreadyEnrollError = Err('TrainingAlreadyEnrollError', ForbiddenError, "You've already enrolled this training.");
@@ -42,12 +44,17 @@ export const HomeworkNotLiveError = Err('HomeworkNotLiveError', ForbiddenError, 
 export const HomeworkNotAttendedError = Err('HomeworkNotAttendedError', ForbiddenError, "You haven't claimed this homework yet.");
 export const RoleAlreadyExistError = Err('RoleAlreadyExistError', ForbiddenError, 'This role already exists.');
 export const DomainAlreadyExistsError = Err('DomainAlreadyExistsError', ForbiddenError, 'The domain {0} already exists.');
-export const DomainJoinForbiddenError = Err('DomainJoinForbiddenError', ForbiddenError, 'You are not allowed to join the domain. The link is either invalid or expired.');
+export const DomainJoinForbiddenError = Err('DomainJoinForbiddenError', ForbiddenError, 'You are not allowed to join domain {0}. {1}');
 export const DomainJoinAlreadyMemberError = Err('DomainJoinAlreadyMemberError', ForbiddenError, 'Failed to join the domain. You are already a member.');
 export const InvalidJoinInvitationCodeError = Err('InvalidJoinInvitationCodeError', ForbiddenError, 'The invitation code you provided is invalid.');
 export const CurrentPasswordError = Err('CurrentPasswordError', ForbiddenError, "Current password doesn't match.");
 export const DiscussionLockedError = Err('DiscussionLockedError', ForbiddenError, 'The discussion is locked, you can not reply anymore.');
-export const NotAssignedError = Err('NotAssignedError', ForbiddenError, 'You are not assigned to this {0}.');
+export const NotAssignedError = Err('NotAssignedError', ForbiddenError, function (this: HydroError) {
+    if (this.params.length >= 3) {
+        return 'Team member {2} is not assigned to this {0}.';
+    }
+    return 'You are not assigned to this {0}.';
+});
 export const FileLimitExceededError = Err('FileLimitExceededError', ForbiddenError, 'File {0} limit exceeded.');
 export const FileUploadError = Err('FileUploadError', ForbiddenError, 'File upload failed.');
 export const FileExistsError = Err('FileExistsError', ForbiddenError, 'File {0} already exists.');
@@ -56,6 +63,7 @@ export const ProblemAlreadyExistError = Err('ProblemAlreadyExistError', Forbidde
 export const ProblemAlreadyUsedByContestError = Err('ProblemAlreadyUsedByContestError', ForbiddenError, 'Problem {0} is already used by contest {1}.');
 export const ProblemNotAllowPretestError = Err('ProblemNotAllowPretestError', ForbiddenError, 'Pretesting is not supported for {0}.');
 export const ProblemNotAllowLanguageError = Err('ProblemNotAllowSubmitError', ForbiddenError, 'This language is not allowed to submit.');
+export const ProblemNotAllowCopyError = Err('ProblemNotAllowCopyError', ForbiddenError, 'You are not allowed to copy this problem from {0} to {1}.');
 
 export const PretestRejudgeFailedError = Err('PretestRejudgeFailedError', BadRequestError, 'Cannot rejudge a pretest record.');
 export const HackRejudgeFailedError = Err('HackRejudgeFailedError', BadRequestError, 'Cannot rejudge a hack record.');

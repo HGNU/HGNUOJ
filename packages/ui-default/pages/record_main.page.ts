@@ -3,7 +3,9 @@ import ProblemSelectAutoComplete from 'vj/components/autocomplete/ProblemSelectA
 import UserSelectAutoComplete from 'vj/components/autocomplete/UserSelectAutoComplete';
 import Notification from 'vj/components/notification';
 import { NamedPage } from 'vj/misc/Page';
-import { getAvailableLangs, request, tpl } from 'vj/utils';
+import {
+  getAvailableLangs, getDomainInfo, request, tpl,
+} from 'vj/utils';
 
 const page = new NamedPage('record_main', async () => {
   const [{ default: WebSocket }, { DiffDOM }] = await Promise.all([
@@ -25,7 +27,7 @@ const page = new NamedPage('record_main', async () => {
       $oldTr.trigger('vjContentNew');
     } else {
       if (+new URLSearchParams(window.location.search).get('page') > 1
-         || new URLSearchParams(window.location.search).get('nopush')) return;
+        || new URLSearchParams(window.location.search).get('nopush')) return;
       $('.record_main__table tbody').prepend($newTr);
       $('.record_main__table tbody tr:last').remove();
       $newTr.trigger('vjContentNew');
@@ -37,7 +39,8 @@ const page = new NamedPage('record_main', async () => {
   ProblemSelectAutoComplete.getOrConstruct($('[name="pid"]'), {
     clearDefaultValue: false,
   });
-  const langs = UiContext.domain.langs?.split(',').map((i) => i.trim()).filter((i) => i);
+  const domain = await getDomainInfo();
+  const langs = domain.langs?.split(',').map((i) => i.trim()).filter((i) => i);
   const availableLangs = getAvailableLangs(langs?.length ? langs : undefined);
   Object.keys(availableLangs).map(
     (i) => ($('select[name="lang"]').append(tpl`<option value="${i}" key="${i}">${availableLangs[i].display}</option>`)));

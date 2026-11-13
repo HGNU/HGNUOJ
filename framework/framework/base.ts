@@ -1,11 +1,16 @@
 import { PassThrough } from 'stream';
 import type { Next } from 'koa';
-import { pick } from 'lodash';
 import {
     HydroRequest, HydroResponse, KoaContext, serializer,
 } from '@hydrooj/framework';
 import { errorMessage } from '@hydrooj/utils/lib/utils';
 import { SystemError, UserFacingError } from './error';
+
+const pick = <T extends object, K extends keyof T>(obj: T, keys: K[]): Pick<T, K> => {
+    const result: Partial<Pick<T, K>> = {};
+    for (const key of keys) result[key] = obj[key];
+    return result as Pick<T, K>;
+};
 
 export default (logger, xff, xhost) => async (ctx: KoaContext, next: Next) => {
     // Base Layer
@@ -13,12 +18,15 @@ export default (logger, xff, xhost) => async (ctx: KoaContext, next: Next) => {
         method: ctx.request.method.toLowerCase(),
         host: ctx.request.headers[xhost?.toLowerCase() || ''] as string || ctx.request.host,
         ip: (ctx.request.headers[xff?.toLowerCase() || ''] as string || ctx.request.ip).split(',')[0].trim(),
-        ...pick(ctx, ['cookies', 'query', 'path', 'params', 'originalPath', 'querystring']),
+        ...pick(ctx, ['cookies', 'query', 'path', 'originalPath', 'querystring']),
         ...pick(ctx.request, ['headers', 'body', 'hostname']),
         files: ctx.request.files as any,
         referer: ctx.request.headers.referer || '',
         json: (ctx.request.headers.accept || '').includes('application/json'),
         websocket: ctx.request.headers.upgrade === 'websocket',
+        get params() {
+            return ctx.params;
+        },
     };
     const response: HydroResponse = {
         body: {},
@@ -27,8 +35,8 @@ export default (logger, xff, xhost) => async (ctx: KoaContext, next: Next) => {
         template: null,
         redirect: null,
         attachment: (name, streamOrBuffer) => {
-            ctx.attachment(name);
-            if (streamOrBuffer instanceof Buffer) {
+            if (name) ctx.attachment(name);
+            if (streamOrBuffer instanceof Buffer || streamOrBuffer instanceof PassThrough) {
                 response.body = null;
                 ctx.body = streamOrBuffer;
             } else {
@@ -59,17 +67,30 @@ export default (logger, xff, xhost) => async (ctx: KoaContext, next: Next) => {
         }
         if (!response.type) {
             if (response.pjax && args.pjax) {
-                const html = await handler.renderHTML(response.pjax, response.body);
-                response.body = { fragments: [{ html }] };
+                const pjax = typeof response.pjax === 'string' ? [[response.pjax, {}]] : response.pjax;
+                response.body = {
+                    fragments: (await Promise.all(
+                        pjax.map(async ([template, extra]) => handler.renderHTML(template, { ...response.body, ...extra })),
+                    )).map((i) => ({ html: i })),
+                };
                 response.type = 'application/json';
             } else if (
                 request.json || response.redirect
-                || request.query.noTemplate || !response.template) {
+                || request.query.noTemplate || !response.template // no template, send raw data
+            ) {
                 // Send raw data
                 try {
-                    if (typeof response.body === 'object') {
-                        response.body.UiContext = UiContext;
-                        response.body.UserContext = user;
+                    if (request.headers['x-hydro-inject']) {
+                        const inject = request.headers['x-hydro-inject'].toString().toLowerCase().split(',').map((i) => i.trim());
+                        if (inject.includes('pagename')) {
+                            ctx.set('x-hydro-page', ctx._matchedRouteName || '');
+                            ctx.set('x-hydro-template', response.template || '');
+                        }
+                        if (response.body !== null && typeof response.body === 'object') {
+                            if (inject.includes('uicontext')) response.body.UiContext = UiContext;
+                            if (inject.includes('usercontext')) response.body.UserContext = user;
+                            if (inject.includes('routemap')) response.body.routeMap = handler.ctx.server.routeMap;
+                        }
                     }
                     response.body = JSON.stringify(response.body, serializer(false, handler));
                 } catch (e) {
@@ -104,6 +125,7 @@ export default (logger, xff, xhost) => async (ctx: KoaContext, next: Next) => {
         }
     } finally {
         if (!request.websocket) {
+            if (ctx.handler) ctx.vary('Accept');
             if (response.etag && request.headers['if-none-match'] === response.etag) {
                 ctx.response.status = 304;
             } else if (response.redirect && !request.json) {
@@ -111,7 +133,7 @@ export default (logger, xff, xhost) => async (ctx: KoaContext, next: Next) => {
                 ctx.response.status = 302;
                 ctx.redirect(response.redirect);
             } else if (response.body) {
-                ctx.body = response.body;
+                ctx.body = response.body instanceof Blob ? Buffer.from(await response.body.arrayBuffer()) : response.body;
                 ctx.response.status = response.status || 200;
                 ctx.response.type = response.type
                     || (request.json

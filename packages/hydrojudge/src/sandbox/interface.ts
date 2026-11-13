@@ -7,6 +7,7 @@ export interface SandboxVersion {
     pipeProxy?: boolean;
     addressSpaceLimit?: boolean;
     stream?: boolean;
+    procPeak?: boolean;
 }
 
 export interface LocalFile {
@@ -147,6 +148,8 @@ export interface FileError {
  */
 export interface SandboxResult {
     status: SandboxStatus;
+    /** 1-based completion order within a grouped run, when supported by the sandbox */
+    exitOrder?: number;
     /** contains error message if status is not Accept */
     error?: string;
     /** signal number if status is Signalled, otherwise exit status */
@@ -157,6 +160,8 @@ export interface SandboxResult {
     memory: number;
     /** wall clock time in ns */
     runTime: number;
+    /** peak count of processes (thread) during execution */
+    procPeak?: number;
     /** copyOut file name to content (UTF-8 encoded and invalid character replaced) */
     files?: Record<string, string>;
     /** copyOutCached file name to fileId */

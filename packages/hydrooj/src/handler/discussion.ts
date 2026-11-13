@@ -56,7 +56,9 @@ class DiscussionHandler extends Handler {
         // TODO(twd2): exclude problem/contest discussions?
         // TODO(iceboy): continuation based pagination.
         this.vnode = await discussion.getVnode(domainId, typeMapper[type], name, this.user._id);
-        if (!discussion.checkVNodeVisibility(typeMapper[type], this.vnode, this.user)) throw new DiscussionNodeNotFoundError(this.vnode.id);
+        if (!discussion.checkVNodeVisibility(typeMapper[type], this.vnode, this.user)) {
+            throw new DiscussionNodeNotFoundError(domainId, this.vnode.id);
+        }
         if (this.ddoc) {
             this.ddoc.parentType ||= this.vnode.type;
             this.ddoc.parentId ||= this.vnode.id;
@@ -72,7 +74,7 @@ class DiscussionMainHandler extends Handler {
         const parentType = { $in: Object.keys(typeMapper).map((i) => typeMapper[i]) };
         all &&= this.user.hasPerm(PERM.PERM_MOD_BADGE);
         const [ddocs, dpcount] = await this.paginate(
-            discussion.getMulti(domainId, { parentType, ...all ? {} : { hidden: false } }),
+            discussion.getMulti(domainId, { parentType, ...all ? {} : { hidden: false } }).hint('discussionSort'),
             page,
             'discussion',
         );
@@ -95,7 +97,7 @@ class DiscussionNodeHandler extends DiscussionHandler {
     async get(domainId: string, type: string, _name: string, page = 1) {
         let name: ObjectId | string | number;
         if (ObjectId.isValid(_name)) name = new ObjectId(_name);
-        else if (isSafeInteger(parseInt(_name, 10))) name = parseInt(_name, 10);
+        else if (isSafeInteger(Number.parseInt(_name, 10))) name = Number.parseInt(_name, 10);
         else name = _name;
         const hidden = this.user.own(this.vnode) || this.user.hasPerm(PERM.PERM_EDIT_DISCUSSION) ? {} : { hidden: false };
         const [ddocs, dpcount] = await this.paginate(
@@ -236,9 +238,7 @@ class DiscussionDetailHandler extends DiscussionHandler {
             message: 'User {0} mentioned you in {1:link}',
             params: [this.user.uname, `/d/${domainId}${this.request.path}`],
         });
-        for (const uid of uids) {
-            message.send(1, uid, msg, message.FLAG_RICHTEXT | message.FLAG_UNREAD);
-        }
+        await message.send(1, uids, msg, message.FLAG_RICHTEXT | message.FLAG_UNREAD);
         const drid = await discussion.addReply(domainId, did, this.user._id, content, this.request.ip);
         this.back({ drid });
     }
@@ -255,9 +255,7 @@ class DiscussionDetailHandler extends DiscussionHandler {
             message: 'User {0} mentioned you in {1:link}',
             params: [this.user.uname, `/d/${domainId}${this.request.path}`],
         });
-        for (const uid of uids) {
-            message.send(1, uid, msg, message.FLAG_RICHTEXT | message.FLAG_UNREAD);
-        }
+        await message.send(1, uids, msg, message.FLAG_RICHTEXT | message.FLAG_UNREAD);
         await discussion.addTailReply(domainId, drid, this.user._id, content, this.request.ip);
         this.back();
     }
@@ -277,8 +275,7 @@ class DiscussionDetailHandler extends DiscussionHandler {
     @param('drid', Types.ObjectId)
     async postDeleteReply(domainId: string, drid: ObjectId) {
         const deleteBy = this.user.own(this.drdoc) ? 'self' : this.user.own(this.ddoc) ? 'DiscussionOwner' : 'Admin';
-        if (!(this.user.own(this.ddoc)
-            && this.user.hasPerm(PERM.PERM_DELETE_DISCUSSION_REPLY_SELF_DISCUSSION))) {
+        if (!this.user.own(this.ddoc) || !this.user.hasPerm(PERM.PERM_DELETE_DISCUSSION_REPLY_SELF_DISCUSSION)) {
             if (!this.user.own(this.drdoc)) {
                 this.checkPerm(PERM.PERM_DELETE_DISCUSSION_REPLY);
             } else this.checkPerm(PERM.PERM_DELETE_DISCUSSION_REPLY_SELF);
@@ -318,8 +315,7 @@ class DiscussionDetailHandler extends DiscussionHandler {
     @param('drrid', Types.ObjectId)
     async postDeleteTailReply(domainId: string, drid: ObjectId, drrid: ObjectId) {
         const deleteBy = this.user.own(this.drrdoc) ? 'self' : 'Admin';
-        if (!(this.user.own(this.drrdoc)
-            && this.user.hasPerm(PERM.PERM_DELETE_DISCUSSION_REPLY_SELF))) {
+        if (!this.user.own(this.drrdoc) || !this.user.hasPerm(PERM.PERM_DELETE_DISCUSSION_REPLY_SELF)) {
             this.checkPerm(PERM.PERM_DELETE_DISCUSSION_REPLY);
         }
         const msg = JSON.stringify({
@@ -340,15 +336,10 @@ class DiscussionDetailHandler extends DiscussionHandler {
     }
 
     @param('did', Types.ObjectId)
-    async postStar(domainId: string, did: ObjectId) {
-        await discussion.setStar(domainId, did, this.user._id, true);
-        this.back({ star: true });
-    }
-
-    @param('did', Types.ObjectId)
-    async postUnstar(domainId: string, did: ObjectId) {
-        await discussion.setStar(domainId, did, this.user._id, false);
-        this.back({ star: false });
+    @param('star', Types.Boolean)
+    async postStar(domainId: string, did: ObjectId, star = false) {
+        await discussion.setStar(domainId, did, this.user._id, star);
+        this.back({ star });
     }
 }
 
@@ -364,10 +355,10 @@ class DiscussionRawHandler extends DiscussionHandler {
         } else {
             const [doc] = await discussion.getHistory(domainId, drrid || drid || did, ts ? { time: new Date(ts) } : {});
             if (!doc) {
-                if (ts) throw new DiscussionNotFoundError(drrid || drid || did);
-                if (drrid && !this.drrdoc) throw new DiscussionNotFoundError(drrid);
-                if (drid && !this.drdoc) throw new DiscussionNotFoundError(drid);
-                if (did && !this.ddoc) throw new DiscussionNotFoundError(did);
+                if (ts) throw new DiscussionNotFoundError(domainId, drrid || drid || did);
+                if (drrid && !this.drrdoc) throw new DiscussionNotFoundError(domainId, drrid);
+                if (drid && !this.drdoc) throw new DiscussionNotFoundError(domainId, drid);
+                if (did && !this.ddoc) throw new DiscussionNotFoundError(domainId, did);
             }
             this.response.type = 'text/markdown';
             this.response.body = doc ? doc.content : drrid ? this.drrdoc.content : drid ? this.drdoc.content : this.ddoc.content;
@@ -377,15 +368,8 @@ class DiscussionRawHandler extends DiscussionHandler {
 
 class DiscussionEditHandler extends DiscussionHandler {
     async get() {
-        const path = [
-            ['Hydro', 'homepage'],
-            ['discussion_main', 'discussion_main'],
-            [this.vnode.title, 'discussion_node', { type: discussion.typeDisplay[this.ddoc.parentType], name: this.ddoc.parentId }, true],
-            [this.ddoc.title, 'discussion_detail', { did: this.ddoc.docId }, true],
-            ['discussion_edit', null],
-        ];
         this.response.template = 'discussion_edit.html';
-        this.response.body = { ddoc: this.ddoc, path };
+        this.response.body = { ddoc: this.ddoc };
     }
 
     @param('did', Types.ObjectId)
@@ -438,7 +422,7 @@ class DiscussionEditHandler extends DiscussionHandler {
 }
 
 export async function apply(ctx) {
-    ctx.Route('discussion_main', '/discuss', DiscussionMainHandler);
+    ctx.Route('discussion_main', '/discuss', DiscussionMainHandler, PERM.PERM_VIEW_DISCUSSION);
     ctx.Route('discussion_detail', '/discuss/:did', DiscussionDetailHandler);
     ctx.Route('discussion_edit', '/discuss/:did/edit', DiscussionEditHandler);
     ctx.Route('discussion_raw', '/discuss/:did/raw', DiscussionRawHandler);

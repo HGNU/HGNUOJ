@@ -1,16 +1,14 @@
-/* eslint-disable global-require */
+import fs from 'fs';
+import { dirname, join } from 'path';
 import { sentryWebpackPlugin } from '@sentry/webpack-plugin';
 import { CleanWebpackPlugin } from 'clean-webpack-plugin';
 import CopyWebpackPlugin from 'copy-webpack-plugin';
 import { version as coreJsVersion } from 'core-js/package.json';
 import compat from 'core-js-compat';
 import { EsbuildPlugin } from 'esbuild-loader';
-import fs from 'fs';
 import { DuplicatesPlugin } from 'inspectpack/plugin';
 import ExtractCssPlugin from 'mini-css-extract-plugin';
-import MonacoWebpackPlugin from 'monaco-editor-webpack-plugin';
 import packageJson from 'package-json';
-import { dirname } from 'path';
 import { gt } from 'semver';
 import webpack from 'webpack';
 import { BundleAnalyzerPlugin } from 'webpack-bundle-analyzer';
@@ -19,11 +17,13 @@ import WebpackBar from 'webpackbar';
 import { version } from '../../package.json';
 import root from '../utils/root';
 
+const monacoPath = join(dirname(require.resolve('monaco-editor/editor.js')), '..', '..');
+
 const {
   list,
   targets,
 } = compat({
-  targets: '> 1%, chrome 70, firefox 60, safari 16, ios_saf 16, not ie 11, not op_mini all',
+  targets: '> 1%, chrome 70, firefox 90, safari 16, ios_saf 16, not ie 11, not op_mini all',
   modules: [
     'core-js/stable',
   ],
@@ -35,16 +35,18 @@ fs.writeFileSync(root('__core-js.js'), `${list.map((i) => `import 'core-js/modul
 
 export default async function (env: { watch?: boolean, production?: boolean, measure?: boolean } = {}) {
   if (env.production) console.log(targets);
-  let isNew = false;
-  const { version: latest } = await packageJson('@hydrooj/ui-default', { version: 'latest' });
-  if (typeof version === 'string' && gt(version, latest)) isNew = true;
+  let createSentryRelease = !!(process.env.CI && process.env.SENTRY_AUTH_TOKEN);
+  if (createSentryRelease) {
+    const { version: latest } = await packageJson('@hydrooj/ui-default', { version: 'latest' });
+    createSentryRelease = typeof version === 'string' && gt(version, latest);
+  }
 
   function esbuildLoader() {
     return {
       loader: 'esbuild-loader',
       options: {
         loader: 'tsx',
-        target: 'es2015',
+        target: ['es2020', 'chrome70', 'firefox90', 'safari16'],
         sourcemap: true,
       },
     };
@@ -87,6 +89,14 @@ export default async function (env: { watch?: boolean, production?: boolean, mea
     };
   }
 
+  function scssLoader() {
+    return {
+      loader: 'sass-loader',
+      options: {
+      },
+    };
+  }
+
   const config: import('webpack').Configuration = {
     // bail: !env.production,
     mode: (env.production || env.measure) ? 'production' : 'development',
@@ -99,6 +109,7 @@ export default async function (env: { watch?: boolean, production?: boolean, mea
     devtool: env.production ? 'source-map' : false,
     entry: {
       [`hydro-${version}`]: './entry.js',
+      sentry: './sentry.ts',
       'default.theme': './theme/default.js',
       'service-worker': './service-worker.ts',
     },
@@ -113,6 +124,9 @@ export default async function (env: { watch?: boolean, production?: boolean, mea
     output: {
       path: root('public'),
       publicPath: '/', // overwrite in entry.js
+      // Workers stay same-origin: classic worker script requests carry no
+      // Origin header, so cross-origin CDN CORS (echo-based) never applies.
+      // Self-contained same-origin workers keep plain HTTP caching.
       workerPublicPath: '/',
       hashFunction: 'sha1',
       hashDigest: 'hex',
@@ -124,6 +138,15 @@ export default async function (env: { watch?: boolean, production?: boolean, mea
       extensions: ['.js', '.jsx', '.ts', '.tsx', '.cjs'],
       alias: {
         vj: root(),
+        'monaco-editor/esm/vs/editor/browser/editorExtensions': join(monacoPath, 'esm/vs/editor/browser/editorExtensions.js'),
+        'monaco-editor/esm/vs/editor/editor.worker.js': join(monacoPath, 'esm/vs/editor/editor.worker.js'),
+        'monaco-editor/esm/vs/platform/quickinput/common/quickInput': join(monacoPath, 'esm/vs/platform/quickinput/common/quickInput.js'),
+        'monaco-editor/esm/vs/base/browser/markdownRenderer': join(monacoPath, 'esm/vs/base/browser/markdownRenderer.js'),
+        'react/jsx-runtime': require.resolve('react/jsx-runtime'),
+        react: require.resolve('react'),
+        'react-dom/client': require.resolve('react-dom/client'),
+        'react-dom/server': join(dirname(require.resolve('react-dom/package.json')), 'server.browser.js'),
+        'react-dom': require.resolve('react-dom'),
       },
     },
     module: {
@@ -198,6 +221,10 @@ export default async function (env: { watch?: boolean, production?: boolean, mea
           use: [extractCssLoader(), cssLoader(), postcssLoader(), stylusLoader()],
         },
         {
+          test: /\.scss$/,
+          use: [extractCssLoader(), cssLoader(), postcssLoader(), scssLoader()],
+        },
+        {
           test: /\.css$/,
           use: [extractCssLoader(), cssLoader(), postcssLoader()],
         },
@@ -209,9 +236,9 @@ export default async function (env: { watch?: boolean, production?: boolean, mea
     },
     optimization: {
       splitChunks: {
-        minSize: 256000,
-        maxAsyncRequests: 5,
-        maxInitialRequests: 3,
+        minSize: 64000,
+        maxAsyncRequests: 10,
+        maxInitialRequests: 7,
         automaticNameDelimiter: '-',
         cacheGroups: {
           style: {
@@ -222,12 +249,12 @@ export default async function (env: { watch?: boolean, production?: boolean, mea
             enforce: true,
           },
           vendors: {
-            test: /[\\/]node_modules[\\/].+\.([jt]sx?|json|yaml)$/,
+            test: /[\\/]node_modules[\\/].+\.(m?[jt]sx?|json|yaml)$/,
             priority: -10,
             name(module) {
               const packageName = module.context.replace(/\\/g, '/').split('node_modules/').pop().split('/')[0];
               if (packageName === 'monaco-editor-nls') {
-                return `i.monaco.${module.userRequest.replace(/\\/g, '/').split('/').pop().split('.')[0]}`;
+                return `i.monaco.${(module as any).userRequest.replace(/\\/g, '/').split('/').pop().split('.')[0]}`;
               }
               return `n.${packageName.replace('@', '')}`;
             },
@@ -248,7 +275,7 @@ export default async function (env: { watch?: boolean, production?: boolean, mea
         minifyIdentifiers: true,
         treeShaking: true,
         target: [
-          'chrome65',
+          'chrome70',
         ],
         exclude: [/mathmaps/, /\.min\.js$/],
       })],
@@ -263,10 +290,11 @@ export default async function (env: { watch?: boolean, production?: boolean, mea
         jQuery: 'jquery',
         'window.jQuery': 'jquery',
         React: 'react',
-        monaco: 'monaco-editor/esm/vs/editor/editor.api',
+        monaco: 'monaco-editor/editor',
       }),
       new ExtractCssPlugin({
-        filename: '[name].css?[fullhash:6]',
+        filename: `[name]-${version}.css?[fullhash:6]`,
+        ignoreOrder: true,
       }),
       new WebpackManifestPlugin({}),
       new webpack.IgnorePlugin({ resourceRegExp: /(^\.\/locale$)/ }),
@@ -276,7 +304,6 @@ export default async function (env: { watch?: boolean, production?: boolean, mea
           { from: root('components/navigation/nav-logo-small_dark.png'), to: 'components/navigation/nav-logo-small_dark.png' },
           { from: root(`${dirname(require.resolve('streamsaver/package.json'))}/mitm.html`), to: 'streamsaver/mitm.html' },
           { from: root(`${dirname(require.resolve('streamsaver/package.json'))}/sw.js`), to: 'streamsaver/sw.js' },
-          { from: root(`${dirname(require.resolve('graphiql/package.json'))}/graphiql.min.css`), to: 'graphiql.min.css' },
           { from: `${dirname(require.resolve('monaco-themes/package.json'))}/themes`, to: 'monaco/themes/' },
         ],
       }),
@@ -284,11 +311,10 @@ export default async function (env: { watch?: boolean, production?: boolean, mea
         authToken: process.env.SENTRY_AUTH_TOKEN,
         org: 'hydro-dev',
         project: 'hydro-web',
-        url: 'https://sentry.hydro.ac',
         sourcemaps: {
           rewriteSources: (source) => source.replace('@hydrooj/ui-default/../../node_modules/', ''),
         },
-        release: (process.env.CI && isNew) ? {
+        release: createSentryRelease ? {
           name: `hydro-web@${version}`,
           uploadLegacySourcemaps: root('public'),
         } : {},
@@ -296,23 +322,12 @@ export default async function (env: { watch?: boolean, production?: boolean, mea
       new webpack.DefinePlugin({
         'process.env.VERSION': JSON.stringify(require('@hydrooj/ui-default/package.json').version),
       }),
-      new webpack.optimize.MinChunkSizePlugin({
-        minChunkSize: 128000,
-      }),
+      // MinChunkSizePlugin merges worker chunks into the main chunk and breaks
+      // the runtime id module (webpack#15416), do not re-enable it
       new webpack.NormalModuleReplacementPlugin(/\/(vscode-)?nls\.js/, require.resolve('../../components/monaco/nls')),
       new webpack.NormalModuleReplacementPlugin(/^prettier[$/]/, root('../../modules/nop.ts')),
+      new webpack.NormalModuleReplacementPlugin(/^highlightjs[$/]/, root('../../modules/nop.ts')),
       new webpack.NormalModuleReplacementPlugin(/core-js\/stable/, root('__core-js.js')),
-      new MonacoWebpackPlugin({
-        filename: '[name].[hash:6].worker.js',
-        customLanguages: [{
-          label: 'yaml',
-          entry: require.resolve('monaco-yaml/index.js'),
-          worker: {
-            id: 'vs/language/yaml/yamlWorker',
-            entry: require.resolve('monaco-yaml/yaml.worker.js'),
-          },
-        }],
-      }),
       ...env.measure ? [
         new BundleAnalyzerPlugin({ analyzerPort: 'auto' }),
         new DuplicatesPlugin(),

@@ -2,7 +2,7 @@
 import { tmpdir } from 'os';
 import path from 'path';
 import fs from 'fs-extra';
-import { STATUS } from '@hydrooj/utils/lib/status';
+import { STATUS } from '@hydrooj/common';
 import { SystemError } from '../error';
 import { CopyInFile, runQueued } from '../sandbox';
 import client from '../sandbox/client';
@@ -11,7 +11,6 @@ import { JudgeTask } from '../task';
 import { parseMemoryMB, parseTimeMS } from '../utils';
 
 export const judge = async (ctx: JudgeTask) => {
-    ctx.stat.judge = new Date();
     ctx.next({ status: STATUS.STATUS_COMPILING });
     if (!('content' in ctx.code)) throw new SystemError('Unsupported input');
     const [generator, std] = ctx.code.content.toString().split('\n').map((i) => i.trim());
@@ -27,22 +26,22 @@ export const judge = async (ctx: JudgeTask) => {
     let totalStatus = 0;
 
     async function runGenerator(i: number) {
-        const res = await runQueued(
+        await using res = await runQueued(
             `${executeGenerator.execute} ${i}`,
             {
-                stdin: { content: ctx.input || '' },
+                stdin: { content: (ctx.input || [])[i - 1] || '' },
                 copyIn: executeGenerator.copyIn,
                 copyOut: ['stderr'],
                 copyOutCached: ['stdout'],
                 time: parseTimeMS('2s'),
                 memory: parseMemoryMB('256m'),
             },
+            `generate[${i}]<${ctx.rid}>`,
             1,
         );
         const tmp = path.join(tmpdir(), `${ctx.request.rid}.${i}.in`);
-        ctx.clean.push(() => {
+        ctx.pushClean(() => {
             if (fs.existsSync(tmp)) fs.removeSync(tmp);
-            return res.fileIds['stdout'] ? client.deleteFile(res.fileIds['stdout']) : Promise.resolve();
         });
         const {
             code, signalled, time, memory, fileIds, stderr,
@@ -79,7 +78,7 @@ export const judge = async (ctx: JudgeTask) => {
         return status === STATUS.STATUS_ACCEPTED ? tmp : null;
     }
     async function runStd(i: number, stdin: CopyInFile) {
-        const res = await runQueued(
+        await using res = await runQueued(
             `${executeStd.execute} ${i}`,
             {
                 stdin,
@@ -89,12 +88,12 @@ export const judge = async (ctx: JudgeTask) => {
                 time: parseTimeMS('2s'),
                 memory: parseMemoryMB('256m'),
             },
+            `generate.std[${i}]<${ctx.rid}>`,
             1,
         );
         const tmp = path.join(tmpdir(), `${ctx.request.rid}.${i}.out`);
-        ctx.clean.push(() => {
+        ctx.pushClean(() => {
             if (fs.existsSync(tmp)) fs.removeSync(tmp);
-            return res.fileIds['stdout'] ? client.deleteFile(res.fileIds['stdout']) : Promise.resolve();
         });
         const {
             code, signalled, time, memory, fileIds, stderr,
@@ -135,8 +134,6 @@ export const judge = async (ctx: JudgeTask) => {
         const result = await runGenerator(i);
         if (result) await runStd(i, { src: result });
     }
-    ctx.stat.done = new Date();
-    if (process.env.DEV) ctx.next({ message: JSON.stringify(ctx.stat) });
     ctx.end({
         status: totalStatus,
         score: totalStatus === STATUS.STATUS_ACCEPTED ? 100 : 0,

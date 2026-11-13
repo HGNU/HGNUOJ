@@ -1,25 +1,58 @@
 /* eslint-disable no-await-in-loop */
 import os from 'os';
 import path from 'path';
+import { Readable } from 'stream';
 import {
-    AdmZip, buildContent, ContentNode, Context, fs, Handler, PERM,
-    ProblemConfigFile, ProblemModel, ValidationError, yaml,
+    buildContent, Context, extractZip, FileTooLargeError, fs, Handler, PERM,
+    ProblemConfigFile, ProblemModel, randomstring, Schema, SystemModel, ValidationError, yaml, Zip,
 } from 'hydrooj';
 
 const tmpdir = path.join(os.tmpdir(), 'hydro', 'import-qduoj');
 fs.ensureDirSync(tmpdir);
 
+const StringValue = Schema.object({
+    format: Schema.union(['html', 'markdown']).default('html'),
+    value: Schema.string(),
+});
+const ProblemSchema = Schema.object({
+    tags: Schema.array(Schema.string()),
+    title: Schema.string().required(),
+    description: StringValue,
+    input_description: StringValue,
+    output_description: StringValue,
+    samples: Schema.array(Schema.object({
+        input: Schema.string(),
+        output: Schema.string(),
+    })),
+    hint: StringValue,
+    source: Schema.union([StringValue, Schema.string()]),
+    display_id: Schema.transform(
+        Schema.union([Schema.number(), Schema.string()]),
+        (value) => (typeof value === 'number' ? `P${value.toString()}` : value),
+    ),
+    time_limit: Schema.union([Schema.number(), Schema.string()]).required(),
+    memory_limit: Schema.union([Schema.number(), Schema.string()]).required(),
+    spj: Schema.union([
+        Schema.never(),
+        Schema.object({
+            language: Schema.string().required(),
+            code: Schema.string().required(),
+        }),
+    ]),
+    test_case_score: Schema.array(Schema.object({
+        input_name: Schema.string().required(),
+        output_name: Schema.string().required(),
+        score: Schema.number().required(),
+    })),
+});
+
 class ImportQduojHandler extends Handler {
     async fromFile(domainId: string, zipfile: string) {
-        let zip: AdmZip;
-        try {
-            zip = new AdmZip(zipfile);
-        } catch (e) {
-            throw new ValidationError('zip', null, e.message);
-        }
-        const tmp = path.resolve(tmpdir, String.random(32));
-        await new Promise((resolve, reject) => {
-            zip.extractAllToAsync(tmp, true, (err) => (err ? reject(err) : resolve(null)));
+        const zip = new Zip.ZipReader(Readable.toWeb(fs.createReadStream(zipfile)));
+        const tmp = path.resolve(tmpdir, randomstring(32));
+        await extractZip(zip, tmp, {
+            strip: true,
+            parseError: (e) => new ValidationError('zip', null, e.message),
         });
         let cnt = 0;
         try {
@@ -27,64 +60,26 @@ class ImportQduojHandler extends Handler {
             for (const { name: folder } of folders.filter((i) => i.isDirectory())) {
                 if (!fs.existsSync(path.join(tmp, folder, 'problem.json'))) continue;
                 const buf = await fs.readFile(path.join(tmp, folder, 'problem.json'));
-                const pdoc = JSON.parse(buf.toString());
-                const content: ContentNode[] = [];
-                if (pdoc.description?.value) {
-                    content.push({
-                        type: 'Text',
-                        subType: 'html',
-                        sectionTitle: this.translate('Description'),
-                        text: pdoc.description.value,
-                    });
-                }
-                if (pdoc.input_description?.value) {
-                    content.push({
-                        type: 'Text',
-                        subType: 'html',
-                        sectionTitle: this.translate('Input Format'),
-                        text: pdoc.input_description.value,
-                    });
-                }
-                if (pdoc.output_description?.value) {
-                    content.push({
-                        type: 'Text',
-                        subType: 'html',
-                        sectionTitle: this.translate('Output Format'),
-                        text: pdoc.output_description.value,
-                    });
-                }
-                if (pdoc.samples?.length) {
-                    content.push(...pdoc.samples.map((sample) => ({
-                        type: 'Sample',
-                        sectionTitle: this.translate('Sample'),
-                        payload: [sample.input, sample.output],
-                    })));
-                }
-                if (pdoc.hint?.value) {
-                    content.push({
-                        type: 'Text',
-                        subType: 'html',
-                        sectionTitle: this.translate('Hint'),
-                        text: pdoc.hint.value,
-                    });
-                }
-                if (pdoc.source?.value) {
-                    content.push({
-                        type: 'Text',
-                        subType: 'html',
-                        sectionTitle: this.translate('Source'),
-                        text: pdoc.source.value,
-                    });
-                }
+                const pdoc = ProblemSchema(JSON.parse(buf.toString()));
+                const content = buildContent({
+                    description: pdoc.description?.value,
+                    input: pdoc.input_description?.value,
+                    output: pdoc.output_description?.value,
+                    samples: pdoc.samples.map((sample) => [sample.input, sample.output]),
+                    hint: pdoc.hint?.value,
+                    source: typeof pdoc.source === 'string' ? pdoc.source : pdoc.source?.value || '',
+                }, 'html');
                 if (+pdoc.display_id) pdoc.display_id = `P${pdoc.display_id}`;
                 const isValidPid = async (id: string) => {
-                    if (!(/^[A-Za-z]+[0-9A-Za-z]*$/.test(id))) return false;
+                    if (!(/^[A-Za-z][0-9A-Za-z]*$/.test(id))) return false;
                     if (await ProblemModel.get(domainId, id)) return false;
                     return true;
                 };
                 if (!await isValidPid(pdoc.display_id)) pdoc.display_id = null;
+                const lang = SystemModel.get('server.language') || 'zh';
                 const pid = await ProblemModel.add(
-                    domainId, pdoc.display_id, pdoc.title, buildContent(content, 'html'),
+                    domainId, pdoc.display_id, pdoc.title,
+                    JSON.stringify([{ name: `problem_${lang}.html`, lang, content }]),
                     this.user._id, pdoc.tags || [],
                 );
                 const config: ProblemConfigFile = {
@@ -120,10 +115,7 @@ class ImportQduojHandler extends Handler {
                     config.checker = 'checker.cc';
                     config.checker_type = 'qduoj';
                 }
-                tasks.push(
-                    ProblemModel.addTestdata(domainId, pid, 'config.yaml', Buffer.from(yaml.dump(config))),
-                    ProblemModel.edit(domainId, pid, { html: true }),
-                );
+                tasks.push(ProblemModel.addTestdata(domainId, pid, 'config.yaml', Buffer.from(yaml.dump(config))));
                 await Promise.all(tasks);
                 cnt++;
             }
@@ -139,10 +131,10 @@ class ImportQduojHandler extends Handler {
     }
 
     async post({ domainId }) {
-        if (!this.request.files.file) throw new ValidationError('file');
-        const stat = await fs.stat(this.request.files.file.filepath);
-        if (stat.size > 128 * 1024 * 1024) throw new ValidationError('file', 'File too large');
-        await this.fromFile(domainId, this.request.files.file.filepath);
+        const file = this.request.files.file;
+        if (!file) throw new ValidationError('file');
+        if (file.size > 256 * 1024 * 1024) throw new FileTooLargeError('256m');
+        await this.fromFile(domainId, file.filepath);
         this.response.redirect = this.url('problem_main');
     }
 }

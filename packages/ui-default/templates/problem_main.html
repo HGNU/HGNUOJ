@@ -10,6 +10,11 @@
             <div class="search">
               <input name="q" type="text" value="{{ qs }}" placeholder="{{ _('Search') }}">
               {% include "partials/problem_stat.html" %}
+              <select name="sort" class="search-sort">
+                {%- for sortType in ["default", "recent"] -%}
+                  <option value="{{ sortType }}" {{ "selected" if sort == sortType else "" }}>{{ _('sort::' + sortType) }}</option>
+                {%- endfor -%}
+              </select>
               <button type="submit">
                 <span class="icon icon-search"></span>
               </button>
@@ -33,6 +38,7 @@
               <span class="icon icon-edit"></span>
               {{ _('Leave Edit Mode') }}
             </a>
+            <div id="problem_selection" class="display-mode-hide"></div>
             {% if handler.user.hasPerm(perm.PERM_EDIT_PROBLEM) %}
               <a href="javascript:;" class="menu__link display-mode-hide" name="hide_selected_problems">
                 <span class="icon icon-close"></span>

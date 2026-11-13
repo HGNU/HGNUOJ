@@ -1,0 +1,53 @@
+{% set page_name = 'contest_scoreboard_xcpcio' %}
+{% extends "layout/basic.html" %}
+{% block content %}
+<script>
+    function normalizePath(_) {
+        for (; _.endsWith("/");)_ = _.slice(0, -1);
+        return `${_}/`;
+    }
+    window.CDN_HOST = "{{ '/' if process.env.DEV else UiContext.cdn_prefix }}";
+    window.__toAssetUrl = url => window.CDN_HOST + url;
+    window.DATA_HOST = "/";
+    window.DATA_REGION = "Hydro";
+    window.DEFAULT_LANG = "{{ 'zh-CN' if _('__id').startsWith('zh') else 'en' }}";
+    window.DATA_SOURCE = "{{ dataSource|safe }}";
+    {% if refreshInterval %}window.REFRESH_INTERVAL = {{ refreshInterval }};{% endif %}
+    if (document.documentElement.classList.contains("theme--dark")) document.documentElement.classList.toggle("dark", !0);
+    setInterval(() => {
+        const location = window.location.href;
+        if (location.includes("%2F")) {
+            window.history.replaceState(null, "", location.replace(/%2F/g, "/"));
+        }
+    }, 500);
+</script>
+<style>
+    #app .nav, .omnibar-toggle, #app>main>footer>div>a, #app>main>footer>div>p { display: none; }
+    #app footer { padding-top: 0 !important; padding-bottom: 0 !important; }
+    .nav__item .icon img { display: inherit; }
+    table { border-spacing: 2px; }
+    th { text-align: center; }
+    td.unattempted, td.empty { background-color: transparent !important; }
+    #app main { overflow-y: auto; overflow-x: hidden; }
+</style>
+<script type="module" crossorigin src="{{ '/' if process.env.DEV else UiContext.cdn_prefix }}assets/index-{{ js }}.js"></script>
+<link rel="stylesheet" crossorigin href="{{ '/' if process.env.DEV else UiContext.cdn_prefix }}assets/index-{{ css }}.css">
+{% if tdoc and realtime and model.contest.isLocked(tdoc) and model.contest.isDone(tdoc) and handler.user.own(tdoc) %}
+<div class="main">
+  <div class="row typo">
+    <blockquote class="note">
+      {{ _('You are viewing the realtime scoreboard while the scoreboard is currently frozen.') }} <br>
+      {{ _('To allow contestants to view the scoreboard, you can unfreeze the scoreboard.') }} <br>
+      <form method="POST">
+        <input type="hidden" name="operation" value="unlock">
+        <button type="submit" class="button">
+          <span class="icon icon-feeling-lucky"></span> {{ _('Unlock scoreboard') }}
+        </button>
+      </form>
+    </blockquote>
+  </div>
+</div>
+{% endif %}
+<div id="app"></div>
+<noscript>This website requires JavaScript to function properly. Please enable JavaScript tocontinue.</noscript>
+{% endblock %}

@@ -1,11 +1,11 @@
-/* eslint-disable no-await-in-loop */
 import path from 'path';
 import {
-    changeErrorType, fs, normalizeSubtasks, readSubtasksFromFiles, yaml,
+    convertIniConfig, LangConfig, normalizeSubtasks, ProblemConfigFile, readSubtasksFromFiles,
+} from '@hydrooj/common';
+import { readYamlCases } from '@hydrooj/common/cases';
+import {
+    changeErrorType, fs, yaml,
 } from '@hydrooj/utils';
-import readYamlCases, { convertIniConfig } from '@hydrooj/utils/lib/cases';
-import { LangConfig } from '@hydrooj/utils/lib/lang';
-import { ProblemConfigFile } from 'hydrooj';
 import { getConfig } from './config';
 import { FormatError, SystemError } from './error';
 import { NextFunction, ParsedConfig } from './interface';
@@ -15,7 +15,16 @@ function isValidConfig(config) {
     if (config.type !== 'objective' && config.count > (getConfig('testcases_max') || 100)) {
         throw new FormatError('Too many testcases. Cancelled.');
     }
-    const time = Math.sum(...config.subtasks.flatMap((subtask) => subtask.cases.map((c) => c.time)));
+    if (config.type === 'communication') {
+        config.num_processes ??= 2;
+        if (!Number.isInteger(config.num_processes) || config.num_processes <= 0) {
+            throw new FormatError('Number of processes must be a positive integer for communication type.');
+        }
+        if (config.num_processes > getConfig('processLimit')) {
+            throw new FormatError('Number of processes larger than processLimit');
+        }
+    }
+    const time = config.num_processes * Math.sum(...config.subtasks.flatMap((subtask) => subtask.cases.map((c) => c.time)));
     if (time > (getConfig('total_time_limit') || 60) * 1000) {
         throw new FormatError('Total time limit longer than {0}s. Cancelled.', [+getConfig('total_time_limit') || 60]);
     }
@@ -23,6 +32,20 @@ function isValidConfig(config) {
     if (memMax > parseMemoryMB(getConfig('memoryMax'))) throw new FormatError('Memory limit larger than memory_max');
     if (!['default', 'strict'].includes(config.checker_type || 'default') && !config.checker) {
         throw new FormatError('You did not specify a checker.');
+    }
+    if (config.type === 'interactive' && !config.interactor) {
+        throw new FormatError('Interactive problems require an interactor.');
+    }
+    if (config.multi_pass) {
+        if (!Number.isInteger(config.multi_pass) || config.multi_pass < 2 || config.multi_pass > 20) {
+            throw new FormatError('Multi Pass must be between 2 and 20.');
+        }
+        if (!['default', 'interactive'].includes(config.type)) {
+            throw new FormatError('Multi Pass only supported on default and interactive problems.');
+        }
+        if (config.type === 'default' && !['testlib', 'kattis'].includes(config.checker_type)) {
+            throw new FormatError('Multi Pass on default problems requires a testlib or kattis checker.');
+        }
     }
 }
 
@@ -41,6 +64,7 @@ interface Args {
     next: NextFunction;
     key: string;
     isSelfSubmission: boolean;
+    trusted: boolean;
     lang: string;
     langConfig?: LangConfig;
 }
@@ -83,8 +107,11 @@ export default async function readCases(folder: string, cfg: ProblemConfigFile =
             throw new SystemError('Cannot parse testdata.', [e.message, ...(e.params || [])]);
         }
     }
+    if (result.detail === true) result.detail = 'full';
+    else if (result.detail === false) result.detail = 'case';
+    else result.detail ||= 'full';
     result.subtasks = normalizeSubtasks(result.subtasks || [], checkFile, config.time, config.memory, false, timeRate, memoryRate);
     if (result.key && args.key !== result.key) throw new FormatError('Incorrect secret key');
-    if (!result.key) isValidConfig(result);
+    if (!result.key && !args.trusted) isValidConfig(result);
     return result;
 }
