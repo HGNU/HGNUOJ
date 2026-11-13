@@ -270,6 +270,36 @@ export { BasicFetcher } from './fetch';
 export * from './interface';
 export { VERDICT } from './verdict';
 
+async function migrateLegacyRecords() {
+    const rewrite = (from: string[], to: string) => RecordModel.coll.updateMany({ lang: { $in: from } }, { $set: { lang: to } });
+    await Promise.all([
+        rewrite(['csgoj.0', 'poj.1', 'poj.5'], 'c'),
+        rewrite(['csgoj.1'], 'cc.cc17o2'),
+        rewrite(['csgoj.3', 'poj.2'], 'java'),
+        rewrite(['csgoj.6'], 'py.py3'),
+        rewrite(['csgoj.17'], 'go'),
+        rewrite(['poj.0', 'poj.4'], 'cc.cc98'),
+    ]);
+    return true;
+}
+
+async function migrateLegacyMounts() {
+    const ddocs = await DomainModel.coll.find({ mount: { $exists: true, $ne: null } }).toArray();
+    for (const ddoc of ddocs) {
+        const syncDone = ddoc.syncDone && typeof ddoc.syncDone === 'object'
+            ? ddoc.syncDone : { main: typeof ddoc.syncDone === 'number' ? ddoc.syncDone : !!ddoc.syncDone };
+        // A retry must preserve progress already written to the new collection.
+        await collMount.updateOne({ _id: ddoc._id }, { $setOnInsert: { mount: ddoc.mount, syncDone } }, { upsert: true });
+        await DomainModel.coll.updateOne({ _id: ddoc._id }, { $unset: { mount: '', mountInfo: '', syncDone: '' } });
+    }
+    return true;
+}
+
+async function migrateLegacyData() {
+    await migrateLegacyRecords();
+    return migrateLegacyMounts();
+}
+
 export const name = 'vjudge';
 export async function apply(ctx: Context) {
     ctx.plugin(VJudgeService);
@@ -277,27 +307,12 @@ export async function apply(ctx: Context) {
     if (process.env.HYDRO_CLI) return;
     ctx.inject(['migration'], async (c) => {
         c.migration.registerChannel('vjudge', [
-            async function init() { }, // eslint-disable-line
-            c.migration.dontWait(async () => {
-                const rewrite = (from: string[], to: string) => RecordModel.coll.updateMany({ lang: { $in: from } }, { $set: { lang: to } });
-                await Promise.all([
-                    rewrite(['csgoj.0', 'poj.1', 'poj.5'], 'c'),
-                    rewrite(['csgoj.1'], 'cc.cc17o2'),
-                    rewrite(['csgoj.3', 'poj.2'], 'java'),
-                    rewrite(['csgoj.6'], 'py.py3'),
-                    rewrite(['csgoj.17'], 'go'),
-                    rewrite(['poj.0', 'poj.4'], 'cc.cc98'),
-                ]);
-            }, 'update csgoj and poj langs in record collection'),
-            async () => {
-                const ddocs = await DomainModel.coll.find({ mount: { $exists: true, $ne: null } }).toArray();
-                for (const ddoc of ddocs) {
-                    const syncDone = typeof ddoc.syncDone === 'object' ? ddoc.syncDone : { main: !!ddoc.syncDone };
-                    await collMount.updateOne({ _id: ddoc._id }, { $set: { mount: ddoc.mount, syncDone } }, { upsert: true });
-                }
-                await DomainModel.coll.updateMany({}, { $unset: { mount: '', mountInfo: '', syncDone: '' } });
-                return true;
-            },
+            // Hydro 4 deployments have remote mounts but no channel version yet.
+            migrateLegacyData,
+            c.migration.dontWait(migrateLegacyRecords, 'update csgoj and poj langs in record collection'),
+            migrateLegacyMounts,
+            // Repair sites that previously skipped migration when the channel was first created.
+            migrateLegacyData,
         ]);
     });
     ctx.inject(['vjudge'], async (c) => {
