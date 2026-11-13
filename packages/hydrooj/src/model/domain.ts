@@ -115,6 +115,8 @@ class DomainModel {
 
     static async edit(domainId: string, $set: Partial<DomainDoc>) {
         domainId = domainId.toLowerCase();
+        // Explicit join-policy changes opt the domain into the new membership rules.
+        if (Object.hasOwn($set, '_join')) $set._migratedJoin = false;
         await bus.parallel('domain/before-update', domainId, $set);
         const result = await coll.findOneAndUpdate({ lower: domainId }, { $set }, { returnDocument: 'after' });
         if (result) {
@@ -241,11 +243,17 @@ class DomainModel {
     static async getDomainUser(domainId: string, udoc: DomainUserArg) {
         let dudoc = await collUser.findOne({ domainId, uid: udoc._id });
         dudoc ||= { domainId, uid: udoc._id };
+        const ddoc = await DomainModel.get(domainId);
+        // Hydro 4 allowed registered users to use open domains without a membership row.
+        // Preserve that access only until an administrator explicitly changes the join policy.
+        // An explicit leave/kick (join: false) must always remain effective.
+        const legacyOpenAccess = ddoc?._migratedJoin && !Object.hasOwn(dudoc, 'join')
+            && ddoc._join?.method === DomainModel.JOIN_METHOD_ALL
+            && ddoc._join.role === 'default' && !ddoc._join.expire;
         if (!(udoc.priv & PRIV.PRIV_USER_PROFILE)) dudoc.role = 'guest';
-        if (!dudoc.join && !(udoc.priv & PRIV.PRIV_VIEW_ALL_DOMAIN)) dudoc.role = 'guest';
+        if (!dudoc.join && !legacyOpenAccess && !(udoc.priv & PRIV.PRIV_VIEW_ALL_DOMAIN)) dudoc.role = 'guest';
         if (udoc.priv & PRIV.PRIV_MANAGE_ALL_DOMAIN) dudoc.role = 'root';
         dudoc.role ||= 'default';
-        const ddoc = await DomainModel.get(domainId);
         dudoc.perm = ddoc?.roles[dudoc.role]
             ? BigInt(ddoc?.roles[dudoc.role])
             : BUILTIN_ROLES[dudoc.role];
