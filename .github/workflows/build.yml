@@ -75,7 +75,7 @@ jobs:
       env:
         SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
     - name: Publish
-      if: ${{ github.event_name == 'push' }}
+      if: ${{ github.event_name == 'push' && github.repository == 'hydro-dev/Hydro' }}
       run: node -r @hydrooj/register build/publish.ts
     # - name: Benchmark
     #   run: yarn benchmark
