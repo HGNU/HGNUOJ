@@ -2,48 +2,54 @@ import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { PERM, PRIV } from '../packages/hydrooj/src/model/builtin';
 import DomainModel from '../packages/hydrooj/src/model/domain';
+import UserModel from '../packages/hydrooj/src/model/user';
 import db from '../packages/hydrooj/src/service/db';
+import { ensureSystemMembership } from '../packages/hydrooj/src/upgrade';
 
 export async function run() {
-    assert.match(db.db.databaseName, /(?:test|upgrade)/i);
-    const prefix = `hgnu_access_${randomBytes(4).toString('hex')}`;
-    const ids: string[] = [];
-    const uid = 2147483600;
-    const registered = { _id: uid, priv: PRIV.PRIV_USER_PROFILE };
-    const create = async (suffix: string, extra: Record<string, any> = {}) => {
-        const id = `${prefix}_${suffix}`;
-        ids.push(id);
+    assert.equal(db.db.databaseName, 'hgnuoj_upgrade');
+    const id = `hgnu_v5_${randomBytes(4).toString('hex')}`;
+    const uids: number[] = [];
+    try {
+        for (const suffix of ['a', 'b']) {
+            uids.push(await UserModel.create(`${id}${suffix}@invalid.local`, `${id}${suffix}`, randomBytes(24).toString('hex')));
+        }
+        const uid = uids[0];
+        const registered = { _id: uid, priv: PRIV.PRIV_USER_PROFILE };
         await DomainModel.coll.insertOne({
             _id: id, lower: id, owner: 1, name: id,
-            roles: { guest: '0', default: PERM.PERM_SUBMIT_PROBLEM.toString() },
+            roles: { guest: '0', default: PERM.PERM_SUBMIT_PROBLEM.toString(), teacher: PERM.PERM_SUBMIT_PROBLEM.toString() },
             _join: { method: DomainModel.JOIN_METHOD_ALL, role: 'default', expire: null },
             _migratedJoin: true,
-            ...extra,
         } as any);
-        return id;
-    };
-    const canSubmit = async (id: string, user = registered) => (
-        (await DomainModel.getDomainUser(id, user)).perm & PERM.PERM_SUBMIT_PROBLEM
-    ) !== 0n;
-    try {
-        const legacy = await create('legacy');
-        assert.equal(await canSubmit(legacy), true);
-        assert.equal(await canSubmit(legacy, { _id: 0, priv: 0 }), false);
-        await DomainModel.collUser.insertOne({ domainId: legacy, uid, role: 'default', join: false });
-        assert.equal(await canSubmit(legacy), false);
-        await DomainModel.collUser.updateOne({ domainId: legacy, uid }, { $set: { join: true } });
-        assert.equal(await canSubmit(legacy), true);
-        const invited = await create('invited', { _join: { method: DomainModel.JOIN_METHOD_CODE, role: 'default' } });
-        assert.equal(await canSubmit(invited), false);
-        const fresh = await create('new', { _migratedJoin: false });
-        assert.equal(await canSubmit(fresh), false);
-        const changed = await create('changed');
-        await DomainModel.edit(changed, { _join: { method: DomainModel.JOIN_METHOD_ALL, role: 'default', expire: null } });
-        assert.equal((await DomainModel.coll.findOne({ _id: changed }))._migratedJoin, false);
-        assert.equal(await canSubmit(changed), false);
-        return { passed: 7 };
+        const role = async (u = registered) => (await DomainModel.getDomainUser(id, u)).role;
+        assert.equal(await role(), 'guest');
+        assert.equal(await role({ _id: 0, priv: 0 }), 'guest');
+        assert.equal((await DomainModel.getDictUserByDomainId(uid))[id], undefined);
+        await DomainModel.setUserInDomain(id, uid, { role: 'default', join: true });
+        assert.equal(await role(), 'default');
+        assert.equal((await DomainModel.getDictUserByDomainId(uid))[id].join, true);
+        await DomainModel.setJoin(id, uid, false);
+        assert.equal(await role(), 'guest');
+        assert.equal((await DomainModel.getDictUserByDomainId(uid))[id], undefined);
+        await DomainModel.setUserInDomain(id, uid, { role: 'teacher', join: false });
+        assert.equal(await role(), 'guest');
+        await DomainModel.setJoin(id, uid, true);
+        assert.equal(await role(), 'teacher');
+        await DomainModel.setUserInDomain(id, uid, { role: 'guest', join: false });
+        await DomainModel.collUser.deleteMany({ domainId: 'system', uid: { $in: uids } });
+        await ensureSystemMembership();
+        assert.equal(await DomainModel.collUser.countDocuments({ domainId: 'system', uid: { $in: uids }, join: true }), 2);
+        await ensureSystemMembership();
+        assert.equal(await DomainModel.collUser.countDocuments({ domainId: 'system', uid: { $in: uids } }), 2);
+        const blocked = await DomainModel.collUser.findOne({ domainId: id, uid });
+        assert.equal(blocked.join, false);
+        assert.equal(blocked.role, 'guest');
+        assert.equal(await DomainModel.getMultiUserInDomain(id, { join: true }).count(), 0);
+        return { passed: 14, policy: 'official-v5', systemRepair: 'per-user-idempotent' };
     } finally {
-        await DomainModel.collUser.deleteMany({ domainId: { $in: ids }, uid });
-        await DomainModel.coll.deleteMany({ _id: { $in: ids } });
+        await DomainModel.collUser.deleteMany({ uid: { $in: uids } });
+        await UserModel.coll.deleteMany({ _id: { $in: uids } });
+        await DomainModel.coll.deleteOne({ _id: id });
     }
 }

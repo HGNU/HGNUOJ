@@ -14,7 +14,7 @@ import { SettingService } from '../packages/hydrooj/src/settings';
 // Run through `hydrooj cli execute` after bootstrapping an isolated test database.
 // Never run fixture mutations against a production database.
 export async function run() {
-    assert.match(db.db.databaseName, /(?:test|upgrade)/i);
+    assert.equal(db.db.databaseName, 'hgnuoj_upgrade');
     const results: string[] = [];
     const prefix = `hgnu_upgrade_${randomBytes(4).toString('hex')}`;
     const uids = new Set<number>();

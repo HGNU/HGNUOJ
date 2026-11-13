@@ -429,7 +429,7 @@ class CourseHandler extends Handler {
         const uDocs: any = {};
         for await (const d of domains) {
             uDocs[d.owner] = await user.getById('system', d.owner);
-            d['users'] = (await domain.getMultiUserInDomain(d._id).toArray()).length;
+            d['users'] = await domain.getMultiUserInDomain(d._id, { join: true }).count();
         }
         this.response.template = 'courses_main.html';
         this.response.body = {

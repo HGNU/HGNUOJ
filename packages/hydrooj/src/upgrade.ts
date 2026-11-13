@@ -20,7 +20,7 @@ import StorageModel from './model/storage';
 import system from './model/system';
 import TaskModel from './model/task';
 import * as training from './model/training';
-import user, { handleMailLower } from './model/user';
+import user, { deleteUserCache, handleMailLower } from './model/user';
 import {
     iterateAllContest, iterateAllDomain, iterateAllProblem, iterateAllUser,
 } from './pipelineUtils';
@@ -35,6 +35,21 @@ Please use hydrooj@4 to perform these upgrades before upgrading to v5');
 };
 
 const onPrimary = { readPreference: 'primary' } as const;
+
+export async function ensureSystemMembership() {
+    const members = await domain.collUser.find({ domainId: 'system', join: true }, onPrimary)
+        .project({ uid: 1 }).toArray();
+    const missing = await user.coll.find({ _id: { $gt: 1, $nin: members.map((u) => u.uid) } }, onPrimary)
+        .project({ _id: 1 }).toArray();
+    // updateMany + upsert creates at most one document, not one per uid in $in.
+    for (const udoc of missing) {
+        await domain.collUser.updateOne(
+            { uid: udoc._id, domainId: 'system' }, { $set: { join: true } }, { upsert: true },
+        );
+    }
+    if (missing.length) deleteUserCache('system');
+    return true;
+}
 
 export const coreScripts: MigrationScript[] = [
     // Mark as used
@@ -577,16 +592,7 @@ export const coreScripts: MigrationScript[] = [
             { $or: [{ _join: { $exists: false } }, { _join: { $eq: null } }, { '_join.method': domain.JOIN_METHOD_NONE }] },
             { $set: { _join: { method: domain.JOIN_METHOD_ALL, role: 'default', expire: null }, _migratedJoin: true } },
         );
-        const domainUser = await domain.collUser.find({ domainId: 'system', join: true }, onPrimary)
-            .project({ uid: 1 }).toArray();
-        const otherUsers = await user.coll.find({ _id: { $gt: 1, $nin: domainUser.map((u) => u.uid) } }, onPrimary)
-            .project({ _id: 1 }).toArray();
-        await domain.collUser.updateMany(
-            { uid: { $in: otherUsers.map((u) => u._id) }, domainId: 'system' },
-            { $set: { join: true } },
-            { upsert: true },
-        );
-        return true;
+        return ensureSystemMembership();
     },
     async function _92_93(ctx) {
         await ctx.inject(['oauth'], async (c) => {
