@@ -1,0 +1,23 @@
+# Addon list rendered into $DEPLOY_ADDON_PATH on the production host.
+#
+# Placeholders (a leading "#" line is stripped before JSON.parse):
+#   __DEPLOY_PATH__       absolute checkout path, e.g. /opt/HGNUOJ-Hydro/Hydro
+#   __LANGUAGE_SERVER__   absolute language-server path
+#
+# The three @hgnuoj packages are listed by absolute path because that is how the
+# live file resolves workspace packages; changing them to "@hgnuoj/..." would
+# require them to be resolvable through node_modules instead.
+[
+  "@hydrooj/ui-default",
+  "@hydrooj/fps-importer",
+  "@hydrooj/import-qduoj",
+  "@hydrooj/elastic-search",
+  "@hydrooj/vjudge",
+  "@hydrooj/onlyoffice",
+  "@hydrooj/geoip",
+  "@hydrooj/hydrojudge",
+  "__LANGUAGE_SERVER__",
+  "__DEPLOY_PATH__/packages/image-preview",
+  "__DEPLOY_PATH__/packages/discussion-toc",
+  "__DEPLOY_PATH__/packages/contest-album"
+]

@@ -1,12 +1,15 @@
 name: CI
 
 on:
-- push
-- pull_request
+  push:
+  # 显式声明类型：deploy 需要 merge_commit_sha，closed 事件必须包含在内。
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, closed]
 
 permissions:
   # Provenance generation in GitHub Actions requires "write" access to the "id-token"
   id-token: write
+  contents: read
 
 env:
   CI: true
@@ -102,63 +105,86 @@ jobs:
     - name: Publish
       if: ${{ github.event_name == 'push' && github.repository == 'hydro-dev/Hydro' }}
       run: node -r @hydrooj/register build/publish.ts
-    # - name: Benchmark
-    #   run: yarn benchmark
-    # - name: Benchmark result
-    #   uses: benchmark-action/github-action-benchmark@v1
-    #   with:
-    #     name: Benchmark
-    #     tool: customBiggerIsBetter
-    #     output-file-path: benchmark.json
-  # web:
-  #   needs: build
-  #   permissions:
-  #     packages: write
-  #     contents: read
-  #   runs-on: ubuntu-latest
-  #   if: ${{ github.event_name == 'push' }}
-  #   steps:
-  #   - name: Check out
-  #     uses: actions/checkout@v2
-  #     with:
-  #       submodules: recursive
-  #   - name: Log in to GitHub Docker Registry
-  #     uses: docker/login-action@v1
-  #     with:
-  #       registry: docker.pkg.github.com
-  #       username: ${{ github.actor }}
-  #       password: ${{ secrets.GITHUB_TOKEN }}
-  #   - name: Docker:Web
-  #     uses: docker/build-push-action@v2
-  #     with:
-  #       push: true
-  #       context: ./install/docker/backend
-  #       tags: |
-  #         docker.pkg.github.com/hydro-dev/web:${{ github.sha }}
-  #         docker.pkg.github.com/hydro-dev/web:${{ github.ref }}
-  # judge:
-  #   needs: build
-  #   if: ${{ github.event_name == 'push' }}
-  #   permissions:
-  #     packages: write
-  #     contents: read
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #   - name: Check out
-  #     uses: actions/checkout@v2
-  #     with:
-  #       submodules: recursive
-  #   - name: Log in to GitHub Docker Registry
-  #     uses: docker/login-action@v1
-  #     with:
-  #       registry: docker.pkg.github.com
-  #       username: ${{ github.actor }}
-  #       password: ${{ secrets.GITHUB_TOKEN }}
-  #   - name: Docker:Judge
-  #     uses: docker/build-push-action@v2
-  #     with:
-  #       push: true  
-  #       context: ./install/docker/judge
-  #       tags: |
-  #         docker.pkg.github.com/hydro-dev/judge:${{ github.sha }}
-  #         docker.pkg.github.com/hydro-dev/judge:${{ github.ref }}
+
+  # 合并进 master 后自动部署。build job 与 deploy job 是两个独立的 runner，
+  # 因此这里重新编译一次制品再上传；只在合并那一刻跑，成本可接受。
+  deploy:
+    needs: build
+    if: >-
+      github.repository == 'HGNU/HGNUOJ' &&
+      github.event_name == 'pull_request' &&
+      github.event.action == 'closed' &&
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.base.ref == 'master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: production
+    concurrency:
+      group: hgnuoj-production
+      cancel-in-progress: false
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      # 私钥口令。目标机只允许密钥登录，没有登录密码。
+      DEPLOY_SSH_PASSPHRASE: ${{ secrets.DEPLOY_SSH_PASSPHRASE }}
+      DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+      DEPLOY_NODE_BIN: ${{ secrets.DEPLOY_NODE_BIN }}
+      DEPLOY_ADDON_PATH: ${{ secrets.DEPLOY_ADDON_PATH }}
+      DEPLOY_LANGUAGE_SERVER_PATH: ${{ secrets.DEPLOY_LANGUAGE_SERVER_PATH }}
+      DEPLOY_PM2_NAME: ${{ secrets.DEPLOY_PM2_NAME }}
+      DEPLOY_JUDGE_PM2_NAME: ${{ secrets.DEPLOY_JUDGE_PM2_NAME }}
+      DEPLOY_JUDGE_CONFIG: ${{ secrets.DEPLOY_JUDGE_CONFIG }}
+      DEPLOY_HEALTH_URL: ${{ secrets.DEPLOY_HEALTH_URL }}
+      YARN_VERSION: '4.18.1'
+    steps:
+    - name: Check out the merged commit
+      uses: actions/checkout@v4
+      with:
+        # closed 事件默认检出 refs/pull/N/merge，这里显式指定合并提交。
+        ref: ${{ github.event.pull_request.merge_commit_sha }}
+        submodules: recursive
+        persist-credentials: false
+    - name: Set up Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: 24
+    - name: Set up Yarn
+      run: |
+        corepack enable
+        corepack prepare "yarn@$YARN_VERSION" --activate
+        yarn --version
+    - name: Locate Yarn cache
+      id: yarn-cache
+      run: echo "dir=$(yarn config get cacheFolder)" >> "$GITHUB_OUTPUT"
+    - name: Restore dependency cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ steps.yarn-cache.outputs.dir }}
+        key: yarn-${{ runner.os }}-${{ env.YARN_VERSION }}-${{ hashFiles('yarn.lock', '**/package.json', '.yarnrc.yml') }}
+        restore-keys: |
+          yarn-${{ runner.os }}-${{ env.YARN_VERSION }}-
+    # sshpass 仅作为口令路径的备用方案，askpass 不需要额外依赖。
+    - name: Install sshpass
+      run: sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+    # 服务器只需要装依赖 + 重启，编译全部在这里完成。
+    - name: Install dependencies
+      run: |
+        printf 'enableScripts: false\n' > .yarnrc.deploy.yml
+        YARN_RC_FILENAME=.yarnrc.deploy.yml yarn install
+      env:
+        LICENSE_KEY: ${{ secrets.MAXMIND_KEY }}
+    - name: Compile artifacts for the target host
+      run: |
+        yarn build:ui:iconfont
+        yarn build
+        yarn build:ui:production:webpack
+      env:
+        SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+    - name: Deploy merged commit over SSH
+      shell: bash
+      env:
+        DEPLOY_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+      run: bash .github/deploy/ssh.sh
